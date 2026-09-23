@@ -1,4 +1,4 @@
-//! `sabidvi render file.dvi [-o out.png|out.svg] [--page N] [--dpi D] [--paper a4|letter] [--crop [margin]]`
+//! `samatch bounds(&list).zip(crop) {idvi render file.dvi [-o out.png|out.svg] [--page N] [--dpi D] [--paper a4|letter] [--crop [margin]]`
 //!
 //! DVI / XDV の 1 ページを、出力名の拡張子に応じて PNG（参照ラスタライザ）か SVG（経路のまま）にする。
 //! `--crop` はインクの範囲に切り詰める（数式の埋め込み用）。フォントは kpsewhich で探す。
