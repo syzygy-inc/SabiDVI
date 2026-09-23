@@ -129,6 +129,8 @@ pub enum Special {
     Landscape,
     /// `dvipdfmx:config …`
     Config(String),
+    /// `sabidvi:mark <名前>`: 位置の目印（数式の基線など）。描画には影響しない
+    Mark(String),
     /// dvips の `ps:`、`!`、`"`、`header=` など
     Unsupported(String),
     Unknown(String),
@@ -146,6 +148,9 @@ pub fn parse(raw: &[u8]) -> Special {
     }
     if let Some(rest) = t.strip_prefix("dvipdfmx:") {
         return Special::Config(rest.trim().to_string());
+    }
+    if let Some(rest) = t.strip_prefix("sabidvi:mark") {
+        return Special::Mark(rest.trim().to_string());
     }
     if let Some(rest) = t.strip_prefix("color ") {
         return Special::Color(parse_color_special(rest.trim()));
@@ -912,6 +917,10 @@ mod tests {
         assert_eq!(
             parse(b"dvipdfmx:config C 0x10"),
             Special::Config("config C 0x10".into())
+        );
+        assert_eq!(
+            parse(b"sabidvi:mark baseline"),
+            Special::Mark("baseline".into())
         );
     }
 }

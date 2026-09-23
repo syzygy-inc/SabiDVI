@@ -9,7 +9,7 @@ SabiRender の入口。DVI（TeX、pTeX / upTeX）と XDV（XeTeX）を読み、
 | `sabidvi-special` | `\special` の解釈。dvipdfmx の `pdf:` 全キーワード、寸法と変換、色（dvips の色名を含む）、`x:`、`papersize` |
 | `sabidvi-page` | ページの実行。位置の計算、文字・規則・special を SabiRender の描画命令列に変換する |
 | `sabidvi-fonts` | `FontSource` の実装。`.vf`（仮想フォントの合成）、`pdftex.map` + `.enc` + Type1、`kanjix.map` + OpenType、XDV のネイティブフォントを SabiFace で読む。探索は `kpsewhich` |
-| `sabidvi-cli` | `sabidvi render file.dvi -o out.png|out.svg [--dpi 150] [--crop [余白bp]]`。参照ラスタライザで PNG に、または経路のまま SVG にする。`--crop` はインクの範囲に切り詰める（数式の埋め込み用） |
+| `sabidvi-cli` | `sabidvi render file.dvi -o out.png|out.svg [--dpi 150] [--crop [余白bp]]`。参照ラスタライザで PNG に、または経路のまま SVG にする。`--crop` はインクの範囲に切り詰め、`--meta out.json` でインクの範囲と基線（`special{sabidvi:mark baseline}` の位置）を書く（数式の埋め込み用） |
 
 設計は `specification/design.md`。
 

@@ -80,6 +80,8 @@ pub struct PageReport {
     pub rules: usize,
     pub specials: usize,
     pub unsupported: Vec<String>,
+    /// `sabidvi:mark` の名前とページ空間の位置（bp）
+    pub marks: Vec<(String, f64, f64)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -438,6 +440,7 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                             XtxSpecial::Ignored(_) => {}
                         },
                         Special::PaperSize(..) | Special::Landscape | Special::Config(_) => {}
+                        Special::Mark(name) => report.marks.push((name, x_user, y_user)),
                         Special::Unsupported(s) => report.unsupported.push(s),
                         Special::Unknown(s) => {
                             report.unsupported.push(format!("unknown special: {s}"))

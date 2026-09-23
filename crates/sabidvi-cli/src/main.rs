@@ -26,6 +26,7 @@ fn main() {
     let mut dpi = 150.0;
     let mut paper = Paper::A4;
     let mut crop: Option<f64> = None;
+    let mut meta: Option<String> = None;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
@@ -49,6 +50,10 @@ fn main() {
                     Some("letter") => Paper::LETTER,
                     _ => Paper::A4,
                 };
+                i += 2;
+            }
+            "--meta" => {
+                meta = args.get(i + 1).cloned();
                 i += 2;
             }
             "--crop" => {
@@ -140,6 +145,25 @@ fn main() {
         eprintln!("{out}: {cw}x{ch}");
     }
     let _ = (w, h);
+    if let Some(meta_path) = meta {
+        // 埋め込み用の計量（bp）: インクの範囲と、DVI の原点（shipout した箱の基準点）の y
+        let b = bounds(&list);
+        // 基線は `special{sabidvi:mark baseline}` があればその y、無ければ DVI の原点の y（shipout した箱の上端）
+        let baseline = report
+            .marks
+            .iter()
+            .find(|(n, _, _)| n == "baseline")
+            .map(|(_, _, y)| *y)
+            .unwrap_or(paper.height - 72.0);
+        let json = match b {
+            Some(b) => format!(
+                "{{\"xmin\":{:.4},\"ymin\":{:.4},\"xmax\":{:.4},\"ymax\":{:.4},\"baseline\":{:.4},\"depth\":{:.4},\"height\":{:.4}}}",
+                b.xmin, b.ymin, b.xmax, b.ymax, baseline, baseline - b.ymin, b.ymax - baseline
+            ),
+            None => "null".to_string(),
+        };
+        std::fs::write(&meta_path, json).unwrap_or_else(|e| fail(format!("{meta_path}: {e}")));
+    }
     eprintln!(
         "chars {}, rules {}, specials {}, missing widths {}, missing glyphs {}, unsupported {}",
         report.chars,
