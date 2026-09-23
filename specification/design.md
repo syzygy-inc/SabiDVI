@@ -16,7 +16,7 @@ dvipdfmx 方言の `\special` を解釈して、装置非依存の描画命令�
 | `sabidvi-special` | `\special` の解釈。`pdf:` の全キーワード表、寸法と変換（`transform_info`）、色（dvips の 68 色を含む） | dvipdfmx `spc_pdfm.c`、`spc_util.c`、`spc_xtx.c`、`specials.c` |
 | `sabidvi-page` | ページの実行。位置の計算、文字・規則・special を描画命令列に | tex.web §585（h, v, w, x, y, z）、dvipdfmx `dvi.c`、`spc_pdfm.c` |
 | `sabidvi-fonts` | `FontSource` の実装。フォント名の解決（VF → map → kanjix.map → 同名 pfb）、VF の合成、Type1 / OpenType の字形 | dvipdfmx `vf.c`、`fontmap.c`、SabiFace |
-| `sabidvi-cli` | `sabidvi render`: 1 ページを PNG に | |
+| `sabidvi-cli` | `sabidvi render`: 1 ページを PNG（参照ラスタライザ）または SVG（`sabirender-svg`）に。`--crop` でインクの範囲に切り詰める | |
 
 ## 座標
 

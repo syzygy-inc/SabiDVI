@@ -15,3 +15,4 @@ sabidvi-format = { path = "../sabidvi-format" }
 sabidvi-page = { path = "../sabidvi-page" }
 sabidvi-fonts = { path = "../sabidvi-fonts" }
 sabirender-raster = { workspace = true }
+sabirender-svg = { workspace = true }

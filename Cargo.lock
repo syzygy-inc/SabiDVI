@@ -10,6 +10,7 @@ dependencies = [
  "sabidvi-format",
  "sabidvi-page",
  "sabirender-raster",
+ "sabirender-svg",
 ]
 
 [[package]]
@@ -69,7 +70,7 @@ source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=f1647a2#f1647a297a2
 [[package]]
 name = "sabirender-content"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=ec3d769#ec3d7695a117c98629cd139b89d89ce9a8318b36"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
 dependencies = [
  "sabirender-display",
 ]
@@ -77,12 +78,20 @@ dependencies = [
 [[package]]
 name = "sabirender-display"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=ec3d769#ec3d7695a117c98629cd139b89d89ce9a8318b36"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
 
 [[package]]
 name = "sabirender-raster"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=ec3d769#ec3d7695a117c98629cd139b89d89ce9a8318b36"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
+dependencies = [
+ "sabirender-display",
+]
+
+[[package]]
+name = "sabirender-svg"
+version = "0.0.1"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
 dependencies = [
  "sabirender-display",
 ]
