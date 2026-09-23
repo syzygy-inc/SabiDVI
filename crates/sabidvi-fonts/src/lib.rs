@@ -30,10 +30,59 @@ pub trait Locator {
     fn find(&self, name: &str) -> Option<PathBuf>;
 }
 
-/// `kpsewhich` で探す（TeX Live）
+/// TeX Live で探す。まず `TEXMFDBS` の各 texmf 木の `ls-R`（kpathsea のファイル名データベース）から
+/// 名前 → パスの索引を一度だけ作り、無ければ `kpsewhich` に聞く（1 回 0.5 秒程度かかるので最後の手段）
 #[derive(Default)]
 pub struct Kpse {
     cache: RefCell<HashMap<String, Option<PathBuf>>>,
+    index: RefCell<Option<HashMap<String, PathBuf>>>,
+}
+
+impl Kpse {
+    fn lookup_index(&self, name: &str) -> Option<PathBuf> {
+        if self.index.borrow().is_none() {
+            *self.index.borrow_mut() = Some(build_ls_r_index());
+        }
+        self.index
+            .borrow()
+            .as_ref()
+            .and_then(|i| i.get(name).cloned())
+    }
+}
+
+/// `ls-R` を読む。`./dir:` の見出しの後にファイル名が並ぶ。先に現れた木が優先（texmf-local、config、var、dist の順）
+fn build_ls_r_index() -> HashMap<String, PathBuf> {
+    let mut index = HashMap::new();
+    let Ok(out) = Command::new("kpsewhich")
+        .args(["-var-value", "TEXMFDBS"])
+        .output()
+    else {
+        return index;
+    };
+    let roots = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let roots = roots.trim_start_matches('{').trim_end_matches('}');
+    for root in roots.split(',') {
+        let root = root.trim().trim_start_matches('!');
+        let Ok(text) = std::fs::read_to_string(PathBuf::from(root).join("ls-R")) else {
+            continue;
+        };
+        let mut dir = PathBuf::from(root);
+        for line in text.lines() {
+            if line.starts_with('%') || line.is_empty() {
+                continue;
+            }
+            if let Some(d) = line.strip_suffix(':') {
+                dir = PathBuf::from(root).join(d.trim_start_matches("./"));
+                continue;
+            }
+            if line.contains('.') {
+                index
+                    .entry(line.to_string())
+                    .or_insert_with(|| dir.join(line));
+            }
+        }
+    }
+    index
 }
 
 impl Locator for Kpse {
@@ -44,6 +93,11 @@ impl Locator for Kpse {
         let direct = PathBuf::from(name);
         let found = if direct.is_absolute() && direct.exists() {
             Some(direct)
+        } else if let Some(p) = self.lookup_index(name).filter(|p| p.exists()) {
+            Some(p)
+        } else if self.index.borrow().as_ref().is_some_and(|i| !i.is_empty()) {
+            // ls-R は TeX Live の全ファイルを列挙しているので、無いものは無い（kpsewhich は 1 回 0.5 秒かかる）
+            None
         } else {
             let out = Command::new("kpsewhich").arg(name).output().ok();
             out.and_then(|o| {
