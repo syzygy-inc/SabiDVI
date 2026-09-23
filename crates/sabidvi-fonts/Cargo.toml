@@ -1,0 +1,18 @@
+[package]
+name = "sabidvi-fonts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "FontSource for SabiDVI: resolves TeX fonts through SabiFace (maps, TFM/JFM, VF, Type1, OpenType)"
+
+[dependencies]
+sabidvi-format = { path = "../sabidvi-format" }
+sabidvi-page = { path = "../sabidvi-page" }
+sabiface-metrics = { workspace = true }
+sabiface-glyph = { workspace = true }
+sabiface-map = { workspace = true }
+sabirender-display = { workspace = true }
+
+[dev-dependencies]
+sabirender-raster = { workspace = true }

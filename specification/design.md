@@ -15,6 +15,8 @@ dvipdfmx 方言の `\special` を解釈して、装置非依存の描画命令�
 | `sabidvi-format` | DVI / XDV の構文。preamble・postamble、ページの位置、命令の復号 | tex.web §583〜§600、`ptex-base.ch`（`dirchg` = 255）、`xetex.web`（251〜254、id = 7） |
 | `sabidvi-special` | `\special` の解釈。`pdf:` の全キーワード表、寸法と変換（`transform_info`）、色（dvips の 68 色を含む） | dvipdfmx `spc_pdfm.c`、`spc_util.c`、`spc_xtx.c`、`specials.c` |
 | `sabidvi-page` | ページの実行。位置の計算、文字・規則・special を描画命令列に | tex.web §585（h, v, w, x, y, z）、dvipdfmx `dvi.c`、`spc_pdfm.c` |
+| `sabidvi-fonts` | `FontSource` の実装。フォント名の解決（VF → map → kanjix.map → 同名 pfb）、VF の合成、Type1 / OpenType の字形 | dvipdfmx `vf.c`、`fontmap.c`、SabiFace |
+| `sabidvi-cli` | `sabidvi render`: 1 ページを PNG に | |
 
 ## 座標
 
@@ -48,7 +50,8 @@ dvipdfmx 方言の `\special` を解釈して、装置非依存の描画命令�
 - 字形の輪郭（字形単位）と字形単位から em への比。無ければ数えて報告する
 - XDV のネイティブフォントは字形 ID で直接引く
 
-TFM / JFM / VF / Type1 / OpenType の読み取りは SabiFace。VF の展開（仮想フォントの DVI 断片を再帰的に実行する）は v0 では未対応。
+TFM / JFM / VF / Type1 / OpenType の読み取りは SabiFace。`sabidvi-fonts` が VF の DVI 断片を再帰的に実行して部品の字形を一つの輪郭に合成する
+（座標は 1000 / em、`right` などの寸法は fix_word × 実サイズ）。
 
 ## 検証
 
@@ -57,12 +60,13 @@ TFM / JFM / VF / Type1 / OpenType の読み取りは SabiFace。VF の展開（�
    SabiDVI の出力と経路・色・線幅・破線を数値で比べる（`crates/sabidvi-page/tests/pgf_dvipdfmx.rs`）。許容誤差は 2e-3 bp
    （dvipdfmx が小数 3〜5 桁で書くため）。TikZ の線・矩形・破線・丸め角・円・不透明度・クリップを含む。
 3. **文字と規則の位置**: TFM の幅からの位置を plain TeX の出力で確かめる。
+4. **字形**: Computer Modern（Type1）、Times（VF → Type1）、Latin Modern（XDV ネイティブ）、upTeX の和文（VF → kanjix.map → OpenType）を
+   実際に描いてインクの位置を確かめる（`crates/sabidvi-fonts/tests/glyphs.rs`）。
 
 エンジンやツールが無い環境ではテストを飛ばす。
 
 ## 今後
 
-- 字形の描画（SabiFace の Type1 / OpenType の輪郭を `FontSource` から供給）と VF の展開。
 - `pdf:image`（PDF / PNG / JPEG）。
 - PGF マニュアル全体の幾何の同一性（ページごとの回帰）。
 - wasm 化と web-mathdb への受け渡し。

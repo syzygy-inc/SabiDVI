@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page"]
+members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page", "crates/sabidvi-fonts", "crates/sabidvi-cli"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,6 +12,6 @@ repository = "https://github.com/syzygy-inc/SabiDVI"
 sabiface-metrics = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
 sabiface-glyph = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
 sabiface-map = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
-sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "60e04c7" }
-sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "60e04c7" }
-sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "60e04c7" }
+sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "ec3d769" }
+sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "ec3d769" }
+sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "ec3d769" }

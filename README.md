@@ -8,6 +8,8 @@ SabiRender の入口。DVI（TeX、pTeX / upTeX）と XDV（XeTeX）を読み、
 | `sabidvi-format` | DVI / XDV の構文。pTeX の縦組（`dirchg`）と XeTeX のネイティブフォント・字形列を含む |
 | `sabidvi-special` | `\special` の解釈。dvipdfmx の `pdf:` 全キーワード、寸法と変換、色（dvips の色名を含む）、`x:`、`papersize` |
 | `sabidvi-page` | ページの実行。位置の計算、文字・規則・special を SabiRender の描画命令列に変換する |
+| `sabidvi-fonts` | `FontSource` の実装。`.vf`（仮想フォントの合成）、`pdftex.map` + `.enc` + Type1、`kanjix.map` + OpenType、XDV のネイティブフォントを SabiFace で読む。探索は `kpsewhich` |
+| `sabidvi-cli` | `sabidvi render file.dvi -o out.png --dpi 150`。参照ラスタライザで 1 ページを PNG にする |
 
 設計は `specification/design.md`。
 

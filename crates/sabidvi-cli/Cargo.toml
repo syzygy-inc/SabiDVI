@@ -1,0 +1,17 @@
+[package]
+name = "sabidvi-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command line: render DVI/XDV pages to PNG through SabiRender"
+
+[[bin]]
+name = "sabidvi"
+path = "src/main.rs"
+
+[dependencies]
+sabidvi-format = { path = "../sabidvi-format" }
+sabidvi-page = { path = "../sabidvi-page" }
+sabidvi-fonts = { path = "../sabidvi-fonts" }
+sabirender-raster = { workspace = true }
