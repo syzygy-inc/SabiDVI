@@ -118,7 +118,7 @@ fn main() {
     } else {
         let s = dpi / 72.0;
         // 切り詰めるときは、インクの範囲を画素に合わせて広げた矩形を装置空間の原点にする
-        let (bx, by, pw, ph) = match crop.and_then(|m| bounds(&list).map(|b| (b, m))) {
+        let (bx, by, pw, ph) = match bounds(&list).zip(crop) {
             Some((b, m)) => (
                 (b.xmin - m).floor(),
                 (b.ymin - m).floor(),
