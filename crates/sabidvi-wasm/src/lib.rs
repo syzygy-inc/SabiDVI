@@ -6,7 +6,8 @@
 //!    （`cmr10.tfm`、`cmr10.pfb`、`8r.enc`、`pdftex.map` など。SabiDVI が探す名前そのまま）
 //! 2. `sabidvi_render(dvi, len, page, scale, margin)` を呼ぶ。戻り値 0 なら `sabidvi_pixels_ptr/len` に RGBA8、
 //!    `sabidvi_meta_ptr/len` に JSON（画素の大きさ、インクの範囲、基線、未対応の数）
-//! 3. 戻り値 1 なら足りないファイルがある。JSON の `missing` を取り寄せて 1 に戻る（SabiTeX の missing-file 方式）
+//! 3. 戻り値 1 なら足りないファイルがあり、字形の欠けた画像になっている。JSON の `missing` を取り寄せて 1 に戻る
+//!    （SabiTeX の missing-file 方式）。取り寄せられないものがあれば、その画像をそのまま使ってよい
 //! 4. 戻り値 2 は誤り。JSON の `error` に理由
 //!
 //! 座標: `scale` はページ空間の 1 bp あたりの画素数。`margin` はインクの範囲に足す余白（bp）。
@@ -151,10 +152,10 @@ pub unsafe extern "C" fn sabidvi_render(
             Ok(r) => r,
             Err(e) => return Err(e.to_string()),
         };
+        // 足りないフォントがあっても描けるところまで描いて返す（利用側は `missing` を取り寄せてもう一度呼ぶ）
         let missing = fonts.missing();
-        if (report.missing_width > 0 || report.missing_glyph > 0) && !missing.is_empty() {
-            return Ok(Err(missing));
-        }
+        let incomplete =
+            (report.missing_width > 0 || report.missing_glyph > 0) && !missing.is_empty();
         let paper = report.paper;
         let b = bounds(&list);
         let (bx, by, pw, ph) = match b {
@@ -201,26 +202,18 @@ pub unsafe extern "C" fn sabidvi_render(
                 .collect::<Vec<_>>()
                 .join(",")
         );
-        Ok(Ok((canvas.to_rgba8(), meta)))
+        Ok((canvas.to_rgba8(), meta, incomplete))
     });
     match result {
         Err(e) => fail(&e),
-        Ok(Err(missing)) => {
-            PIXELS.with(|p| p.borrow_mut().clear());
-            set_meta(format!(
-                "{{\"missing\":[{}]}}",
-                missing
-                    .iter()
-                    .map(|s| format!("\"{}\"", json_escape(s)))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ));
-            1
-        }
-        Ok(Ok((pixels, meta))) => {
+        Ok((pixels, meta, incomplete)) => {
             PIXELS.with(|p| *p.borrow_mut() = pixels);
             set_meta(meta);
-            0
+            if incomplete {
+                1
+            } else {
+                0
+            }
         }
     }
 }
