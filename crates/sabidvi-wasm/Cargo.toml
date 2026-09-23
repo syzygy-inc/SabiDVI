@@ -1,0 +1,18 @@
+[package]
+name = "sabidvi-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C ABI for the browser: render DVI pages with SabiRender's reference rasterizer from an in-memory font bundle"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sabidvi-format = { path = "../sabidvi-format" }
+sabidvi-page = { path = "../sabidvi-page" }
+sabidvi-fonts = { path = "../sabidvi-fonts" }
+sabirender-display = { workspace = true }
+sabirender-raster = { workspace = true }
+sabirender-svg = { workspace = true }

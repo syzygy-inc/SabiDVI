@@ -99,7 +99,7 @@ fn virtual_font_glyphs_are_composed_from_type1_parts() {
         .map()
         .get("ptmr8r")
         .and_then(|e| e.font_file.clone())
-        .and_then(|f| sabidvi_fonts::Locator::find(&Kpse::default(), &f))
+        .and_then(|f| Kpse::default().find(&f))
         .is_none()
     {
         skip("Times (utmr8a.pfb) not installed");
@@ -171,15 +171,15 @@ fn uptex_japanese_glyphs_come_through_vf_and_kanjix_map() {
         skip("uprml-h not in kanjix.map");
         return;
     };
-    if sabidvi_fonts::Locator::find(
-        &Kpse::default(),
-        entry
-            .font_file
-            .trim_start_matches(|c| c == ':' || char::is_numeric(c)),
-    )
-    .is_none()
+    if Kpse::default()
+        .find(
+            entry
+                .font_file
+                .trim_start_matches(|c| c == ':' || char::is_numeric(c)),
+        )
+        .is_none()
     {
-        eprintln!("skipped: {} not installed", entry.font_file);
+        skip(&format!("{} not installed", entry.font_file));
         return;
     }
     let (x0, _, x1, _, report) = ink_bbox(&data, &fonts, 400);

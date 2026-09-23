@@ -21,24 +21,113 @@ use sabiface_metrics::vf::Vf;
 use sabirender_display::{Matrix, Path, Segment};
 use std::cell::RefCell;
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 use std::rc::Rc;
 
-/// ファイルの探索
+/// ファイルの探索と読み取り。ファイルシステム（TeX Live）でも、メモリ上の束（wasm）でもよい
 pub trait Locator {
-    fn find(&self, name: &str) -> Option<PathBuf>;
+    /// 名前のファイルの内容。無ければ None
+    fn read(&self, name: &str) -> Option<Vec<u8>>;
+    /// 見つからなかった名前（利用側がフォントを追加で取り寄せるための手がかり）。出現順、重複なし
+    fn missing(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// 借用でも使えるようにする（wasm では束を保持したまま `SabiFonts` を作る）
+impl<L: Locator + ?Sized> Locator for &L {
+    fn read(&self, name: &str) -> Option<Vec<u8>> {
+        (**self).read(name)
+    }
+    fn missing(&self) -> Vec<String> {
+        (**self).missing()
+    }
+}
+
+/// メモリ上のファイル束。wasm など、ファイルシステムの無い環境で使う。無かった名前を記録する
+#[derive(Default)]
+pub struct MemoryLocator {
+    files: HashMap<String, Vec<u8>>,
+    misses: RefCell<Vec<String>>,
+}
+
+impl MemoryLocator {
+    pub fn add(&mut self, name: &str, data: Vec<u8>) {
+        self.files.insert(name.to_string(), data);
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.files.contains_key(name)
+    }
+
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+}
+
+impl Locator for MemoryLocator {
+    fn read(&self, name: &str) -> Option<Vec<u8>> {
+        match self.files.get(name) {
+            Some(d) => Some(d.clone()),
+            None => {
+                let mut m = self.misses.borrow_mut();
+                if !m.iter().any(|x| x == name) {
+                    m.push(name.to_string());
+                }
+                None
+            }
+        }
+    }
+
+    fn missing(&self) -> Vec<String> {
+        self.misses.borrow().clone()
+    }
 }
 
 /// TeX Live で探す。まず `TEXMFDBS` の各 texmf 木の `ls-R`（kpathsea のファイル名データベース）から
 /// 名前 → パスの索引を一度だけ作り、無ければ `kpsewhich` に聞く（1 回 0.5 秒程度かかるので最後の手段）
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 pub struct Kpse {
     cache: RefCell<HashMap<String, Option<PathBuf>>>,
     index: RefCell<Option<HashMap<String, PathBuf>>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Kpse {
+    /// 名前からパスへ（ls-R の索引、無ければ kpsewhich）
+    pub fn find(&self, name: &str) -> Option<PathBuf> {
+        if let Some(p) = self.cache.borrow().get(name) {
+            return p.clone();
+        }
+        let direct = PathBuf::from(name);
+        let found = if direct.is_absolute() && direct.exists() {
+            Some(direct)
+        } else if let Some(p) = self.lookup_index(name).filter(|p| p.exists()) {
+            Some(p)
+        } else if self.index.borrow().as_ref().is_some_and(|i| !i.is_empty()) {
+            // ls-R は TeX Live の全ファイルを列挙しているので、無いものは無い（kpsewhich は 1 回 0.5 秒かかる）
+            None
+        } else {
+            let out = Command::new("kpsewhich").arg(name).output().ok();
+            out.and_then(|o| {
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                (!s.is_empty()).then(|| PathBuf::from(s))
+            })
+        };
+        self.cache
+            .borrow_mut()
+            .insert(name.to_string(), found.clone());
+        found
+    }
+
     fn lookup_index(&self, name: &str) -> Option<PathBuf> {
         if self.index.borrow().is_none() {
             *self.index.borrow_mut() = Some(build_ls_r_index());
@@ -51,6 +140,7 @@ impl Kpse {
 }
 
 /// `ls-R` を読む。`./dir:` の見出しの後にファイル名が並ぶ。先に現れた木が優先（texmf-local、config、var、dist の順）
+#[cfg(not(target_arch = "wasm32"))]
 fn build_ls_r_index() -> HashMap<String, PathBuf> {
     let mut index = HashMap::new();
     let Ok(out) = Command::new("kpsewhich")
@@ -85,30 +175,10 @@ fn build_ls_r_index() -> HashMap<String, PathBuf> {
     index
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Locator for Kpse {
-    fn find(&self, name: &str) -> Option<PathBuf> {
-        if let Some(p) = self.cache.borrow().get(name) {
-            return p.clone();
-        }
-        let direct = PathBuf::from(name);
-        let found = if direct.is_absolute() && direct.exists() {
-            Some(direct)
-        } else if let Some(p) = self.lookup_index(name).filter(|p| p.exists()) {
-            Some(p)
-        } else if self.index.borrow().as_ref().is_some_and(|i| !i.is_empty()) {
-            // ls-R は TeX Live の全ファイルを列挙しているので、無いものは無い（kpsewhich は 1 回 0.5 秒かかる）
-            None
-        } else {
-            let out = Command::new("kpsewhich").arg(name).output().ok();
-            out.and_then(|o| {
-                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                (!s.is_empty()).then(|| PathBuf::from(s))
-            })
-        };
-        self.cache
-            .borrow_mut()
-            .insert(name.to_string(), found.clone());
-        found
+    fn read(&self, name: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.find(name)?).ok()
     }
 }
 
@@ -145,13 +215,12 @@ impl<L: Locator> SabiFonts<L> {
     pub fn new(locator: L) -> Self {
         let mut map = FontMap::default();
         for (name, kanji) in [("pdftex.map", false), ("kanjix.map", true)] {
-            if let Some(p) = locator.find(name) {
-                if let Ok(text) = std::fs::read_to_string(&p) {
-                    if kanji {
-                        map.add_kanji_map(&text);
-                    } else {
-                        map.add_pdftex_map(&text);
-                    }
+            if let Some(bytes) = locator.read(name) {
+                let text = String::from_utf8_lossy(&bytes);
+                if kanji {
+                    map.add_kanji_map(&text);
+                } else {
+                    map.add_pdftex_map(&text);
                 }
             }
         }
@@ -167,20 +236,21 @@ impl<L: Locator> SabiFonts<L> {
         &self.map
     }
 
+    /// 探して無かったファイル名（wasm の利用側がフォントを取り寄せて再実行するための手がかり）
+    pub fn missing(&self) -> Vec<String> {
+        self.locator.missing()
+    }
+
     fn metrics(&self, name: &str) -> Option<Rc<Metrics>> {
         if let Some(m) = self.metrics.borrow().get(name) {
             return m.clone();
         }
-        let loaded = self
-            .locator
-            .find(&format!("{name}.tfm"))
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|data| {
-                Tfm::parse(&data)
-                    .ok()
-                    .map(Metrics::Tfm)
-                    .or_else(|| Jfm::parse(&data).ok().map(Metrics::Jfm))
-            });
+        let loaded = self.locator.read(&format!("{name}.tfm")).and_then(|data| {
+            Tfm::parse(&data)
+                .ok()
+                .map(Metrics::Tfm)
+                .or_else(|| Jfm::parse(&data).ok().map(Metrics::Jfm))
+        });
         let rc = loaded.map(Rc::new);
         self.metrics
             .borrow_mut()
@@ -201,22 +271,21 @@ impl<L: Locator> SabiFonts<L> {
     }
 
     fn load_glyph_font(&self, name: &str) -> Option<GlyphFont> {
-        if let Some(p) = self.locator.find(&format!("{name}.vf")) {
-            if let Ok(vf) = Vf::parse(&std::fs::read(p).ok()?) {
+        if let Some(data) = self.locator.read(&format!("{name}.vf")) {
+            if let Ok(vf) = Vf::parse(&data) {
                 return Some(GlyphFont::Virtual(vf));
             }
         }
         if let Some(entry) = self.map.get(name) {
             let file = entry.font_file.clone()?;
-            let data = std::fs::read(self.locator.find(&file)?).ok()?;
+            let data = self.locator.read(&file)?;
             if file.ends_with(".pfb") || file.ends_with(".pfa") {
                 let font = Type1Font::parse(&data).ok()?;
                 let enc = entry
                     .encoding_file
                     .as_ref()
-                    .and_then(|e| self.locator.find(e))
-                    .and_then(|p| std::fs::read_to_string(p).ok())
-                    .and_then(|t| Encoding::parse(&t).ok());
+                    .and_then(|e| self.locator.read(e))
+                    .and_then(|b| Encoding::parse(&String::from_utf8_lossy(&b)).ok());
                 return Some(GlyphFont::Type1 {
                     font,
                     enc,
@@ -228,11 +297,11 @@ impl<L: Locator> SabiFonts<L> {
         }
         if let Some(entry) = self.map.get_kanji(name) {
             let (index, file) = split_ttc_index(&entry.font_file);
-            let data = std::fs::read(self.locator.find(file)?).ok()?;
+            let data = self.locator.read(file)?;
             return Some(GlyphFont::OpenType { data, index });
         }
         // map に無ければ同名の pfb を探す
-        let data = std::fs::read(self.locator.find(&format!("{name}.pfb"))?).ok()?;
+        let data = self.locator.read(&format!("{name}.pfb"))?;
         Some(GlyphFont::Type1 {
             font: Type1Font::parse(&data).ok()?,
             enc: None,
@@ -453,8 +522,7 @@ impl<L: Locator> FontSource for SabiFonts<L> {
                 None => {
                     let loaded = self
                         .locator
-                        .find(&file)
-                        .and_then(|p| std::fs::read(p).ok())
+                        .read(&file)
                         .map(|data| GlyphFont::OpenType { data, index })
                         .unwrap_or(GlyphFont::Missing);
                     let rc = Rc::new(loaded);

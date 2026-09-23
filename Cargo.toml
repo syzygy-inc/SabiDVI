@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page", "crates/sabidvi-fonts", "crates/sabidvi-cli"]
+members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page", "crates/sabidvi-fonts", "crates/sabidvi-cli", "crates/sabidvi-wasm"]
 
 [workspace.package]
 version = "0.0.1"
@@ -16,3 +16,8 @@ sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev
 sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
 sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
 sabirender-svg = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

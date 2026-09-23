@@ -50,6 +50,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sabidvi-wasm"
+version = "0.0.1"
+dependencies = [
+ "sabidvi-fonts",
+ "sabidvi-format",
+ "sabidvi-page",
+ "sabirender-display",
+ "sabirender-raster",
+ "sabirender-svg",
+]
+
+[[package]]
 name = "sabiface-glyph"
 version = "0.0.1"
 source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=47d16ca#47d16ca6afc69ea9f4a240af54d9af3c9e9619db"
