@@ -24,23 +24,32 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Build wasm
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --release -p sabidvi-wasm --target wasm32-unknown-unknown
+          ls -la target/wasm32-unknown-unknown/release/sabidvi_wasm.wasm
 
-  # 参照環境あり: TeX Live のエンジン・dvipdfmx・フォントを導入し、skip を失敗にして oracle を必ず実行する
+  # 参照環境あり: TeX Live のエンジン・dvipdfmx・PGF・Computer Modern を導入し、skip を失敗にして oracle を必ず実行する。
+  # 追加のフォント（Times、Latin Modern、原ノ味）と upTeX / XeTeX は optional で、無ければ warning として記録する
   oracle:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install TeX Live
+      - name: Install TeX Live (core)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            texlive-binaries texlive-base texlive-fonts-recommended texlive-pictures \
-            texlive-lang-japanese fonts-haranoaji
-          kpsewhich cmr10.tfm utmr8a.pfb ptmr7t.vf lmroman10-regular.otf uprml-h.tfm HaranoAjiMincho-Regular.otf
-          which tex etex uptex xetex dvipdfmx
-      - name: Test (strict)
+          sudo apt-get install -y --no-install-recommends texlive-binaries texlive-base texlive-fonts-recommended texlive-pictures
+      - name: Install optional engines and fonts
+        continue-on-error: true
+        run: sudo apt-get install -y --no-install-recommends texlive-lang-japanese fonts-haranoaji fonts-lmodern
+      - name: Diagnose the reference environment
+        run: |
+          for t in tex etex uptex xetex dvipdfmx kpsewhich; do printf '%s: ' "$t"; which "$t" || echo "(missing)"; done
+          for f in cmr10.tfm cmr10.pfb utmr8a.pfb ptmr7t.vf lmroman10-regular.otf uprml-h.tfm upjisr-h.tfm HaranoAjiMincho-Regular.otf; do printf '%s: ' "$f"; kpsewhich "$f" || echo "(missing)"; done
+      - name: Test (strict for the core environment)
         env:
           SABI_STRICT_TESTS: "1"
         run: cargo test --workspace

@@ -335,10 +335,19 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
     assert!(close(x0, expected_x, 1e-3), "{x0} vs {expected_x}");
 }
 
-/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする
+/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする。
+/// 中核でない環境（upTeX、XeTeX、Times、Latin Modern、原ノ味）は `SABI_STRICT_OPTIONAL` も設定されているときだけ失敗にする
 fn skip(reason: &str) {
-    if std::env::var_os("SABI_STRICT_TESTS").is_some() {
+    let optional = ["uptex", "xetex", "Times", "uprml", "Harano", ".otf"]
+        .iter()
+        .any(|k| reason.contains(k));
+    let strict = std::env::var_os("SABI_STRICT_TESTS").is_some()
+        && (!optional || std::env::var_os("SABI_STRICT_OPTIONAL").is_some());
+    if strict {
         panic!("required reference environment is missing: {reason}");
     }
-    eprintln!("skipped: {reason}");
+    eprintln!(
+        "skipped{}: {reason}",
+        if optional { " (optional)" } else { "" }
+    );
 }
