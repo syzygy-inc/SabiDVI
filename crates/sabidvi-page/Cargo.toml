@@ -1,0 +1,16 @@
+[package]
+name = "sabidvi-page"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sabidvi-format = { path = "../sabidvi-format" }
+sabidvi-special = { path = "../sabidvi-special" }
+sabiface-metrics = { workspace = true }
+sabirender-display = { workspace = true }
+sabirender-content = { workspace = true }
+
+[dev-dependencies]
+sabirender-raster = { workspace = true }
