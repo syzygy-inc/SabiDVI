@@ -18,7 +18,7 @@ use sabiface_metrics::enc::Encoding;
 use sabiface_metrics::jfm::Jfm;
 use sabiface_metrics::tfm::Tfm;
 use sabiface_metrics::vf::Vf;
-use sabirender_display::{Path, Segment};
+use sabirender_display::{Matrix, Path, Segment};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -121,6 +121,9 @@ enum GlyphFont {
     Type1 {
         font: Type1Font,
         enc: Option<Encoding>,
+        /// フォントマップの `SlantFont` / `ExtendFont`（dvipdfmx は [extend 0 slant 1 0 0] を掛ける）
+        slant: f64,
+        extend: f64,
     },
     /// OpenType はファイルを保持し、呼び出しごとに解析する（ttf-parser は借用型）
     OpenType {
@@ -214,7 +217,12 @@ impl<L: Locator> SabiFonts<L> {
                     .and_then(|e| self.locator.find(e))
                     .and_then(|p| std::fs::read_to_string(p).ok())
                     .and_then(|t| Encoding::parse(&t).ok());
-                return Some(GlyphFont::Type1 { font, enc });
+                return Some(GlyphFont::Type1 {
+                    font,
+                    enc,
+                    slant: entry.slant.unwrap_or(0.0),
+                    extend: entry.extend.unwrap_or(1.0),
+                });
             }
             return Some(GlyphFont::OpenType { data, index: 0 });
         }
@@ -228,10 +236,12 @@ impl<L: Locator> SabiFonts<L> {
         Some(GlyphFont::Type1 {
             font: Type1Font::parse(&data).ok()?,
             enc: None,
+            slant: 0.0,
+            extend: 1.0,
         })
     }
 
-    /// 仮想フォントの 1 文字を合成する。単位は 1000 / em
+    /// 仮想フォントの 1 文字を合成する。単位は 1000 / em。部品の字形はそれぞれの行列（FontMatrix、傾斜など）で置く
     fn compose_virtual(&self, vf: &Vf, code: u32) -> Option<Path> {
         let ch = vf.char(code)?;
         let mut out = Path::default();
@@ -283,15 +293,11 @@ impl<L: Locator> SabiFonts<L> {
                             area: f.area.clone(),
                             name: f.name.clone(),
                         };
-                        if let Some((path, units_to_em)) = self.glyph(&sub, c) {
-                            let k = units_to_em * s * 1000.0;
-                            let ox = h * em;
-                            let oy = -v * em;
-                            out.segments.extend(
-                                path.segments
-                                    .iter()
-                                    .map(|seg| scale_offset(*seg, k, ox, oy)),
-                            );
+                        if let Some((path, to_em)) = self.glyph(&sub, c) {
+                            let m = to_em
+                                .then(&Matrix::scale(s * 1000.0, s * 1000.0))
+                                .then(&Matrix::translate(h * em, -v * em));
+                            out.segments.extend(path.transform(&m).segments);
                         }
                         self.char_width(&sub, c)
                             .map(|wd| wd * s * 1048576.0)
@@ -366,22 +372,6 @@ fn split_ttc_index(file: &str) -> (u32, &str) {
     (0, file)
 }
 
-fn scale_offset(seg: Segment, k: f64, ox: f64, oy: f64) -> Segment {
-    match seg {
-        Segment::MoveTo(x, y) => Segment::MoveTo(x * k + ox, y * k + oy),
-        Segment::LineTo(x, y) => Segment::LineTo(x * k + ox, y * k + oy),
-        Segment::CurveTo(a, b, c, d, e, f) => Segment::CurveTo(
-            a * k + ox,
-            b * k + oy,
-            c * k + ox,
-            d * k + oy,
-            e * k + ox,
-            f * k + oy,
-        ),
-        Segment::Close => Segment::Close,
-    }
-}
-
 fn to_path(outline: &sabiface_glyph::outline::Outline) -> Path {
     use sabiface_glyph::outline::Segment as S;
     Path {
@@ -419,29 +409,41 @@ impl<L: Locator> FontSource for SabiFonts<L> {
         }
     }
 
-    fn glyph(&self, font: &FontDef, code: u32) -> Option<(Path, f64)> {
+    fn glyph(&self, font: &FontDef, code: u32) -> Option<(Path, Matrix)> {
         let gf = self.glyph_font(&font.name);
         match &*gf {
-            GlyphFont::Virtual(vf) => self.compose_virtual(vf, code).map(|p| (p, 0.001)),
-            GlyphFont::Type1 { font: t1, enc } => {
+            GlyphFont::Virtual(vf) => self
+                .compose_virtual(vf, code)
+                .map(|p| (p, Matrix::scale(0.001, 0.001))),
+            GlyphFont::Type1 {
+                font: t1,
+                enc,
+                slant,
+                extend,
+            } => {
                 let name = match enc {
                     Some(e) => e.glyph_name(code as u8).map(|s| s.to_string()),
                     None => t1.encoding.get(code as usize).cloned().flatten(),
                 }?;
                 let g = t1.glyph(&name).ok()?;
-                Some((to_path(&g.outline), t1.font_matrix[0]))
+                let [a, b, c, d, e, f] = t1.font_matrix;
+                // FontMatrix の全成分と、マップの傾斜・横拡大（dvipdfmx `fontmap.c`: [extend 0 slant 1 0 0]）
+                let m = Matrix::new(a, b, c, d, e, f)
+                    .then(&Matrix::new(*extend, 0.0, *slant, 1.0, 0.0, 0.0));
+                Some((to_path(&g.outline), m))
             }
             GlyphFont::OpenType { data, index } => {
                 let ot = OpenTypeFont::parse(data, *index).ok()?;
                 let gid = ot.glyph_index(char::from_u32(code)?)?;
                 let g = ot.glyph(gid).ok()?;
-                Some((to_path(&g.outline), 1.0 / ot.units_per_em() as f64))
+                let k = 1.0 / ot.units_per_em() as f64;
+                Some((to_path(&g.outline), Matrix::scale(k, k)))
             }
             GlyphFont::Missing => None,
         }
     }
 
-    fn native_glyph(&self, font: &NativeFontDef, glyph_id: u16) -> Option<(Path, f64)> {
+    fn native_glyph(&self, font: &NativeFontDef, glyph_id: u16) -> Option<(Path, Matrix)> {
         let (file, index) = parse_native_name(&font.name);
         let key = format!("native:{}:{index}", file);
         let gf = {
@@ -465,7 +467,8 @@ impl<L: Locator> FontSource for SabiFonts<L> {
             GlyphFont::OpenType { data, index } => {
                 let ot = OpenTypeFont::parse(data, *index).ok()?;
                 let g = ot.glyph(glyph_id).ok()?;
-                Some((to_path(&g.outline), 1.0 / ot.units_per_em() as f64))
+                let k = 1.0 / ot.units_per_em() as f64;
+                Some((to_path(&g.outline), Matrix::scale(k, k)))
             }
             _ => None,
         }

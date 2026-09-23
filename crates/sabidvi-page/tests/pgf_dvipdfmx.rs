@@ -36,7 +36,7 @@ impl FontSource for KpseTfm {
             tfm.char_info(code as u16).map(|c| c.width.to_f64())
         })?
     }
-    fn glyph(&self, _: &FontDef, _: u32) -> Option<(Path, f64)> {
+    fn glyph(&self, _: &FontDef, _: u32) -> Option<(Path, Matrix)> {
         None
     }
 }
@@ -64,7 +64,7 @@ fn build() -> Option<(Vec<u8>, Vec<u8>)> {
         .output()
         .ok();
     if ok.is_none() {
-        eprintln!("skipped: etex not found");
+        skip("etex not found");
         return None;
     }
     let dvi = std::fs::read(dir.join("p.dvi")).ok()?;
@@ -74,7 +74,7 @@ fn build() -> Option<(Vec<u8>, Vec<u8>)> {
         .output()
         .ok();
     if ok.is_none() {
-        eprintln!("skipped: dvipdfmx not found");
+        skip("dvipdfmx not found");
         return None;
     }
     let pdf = std::fs::read(dir.join("p.pdf")).ok()?;
@@ -295,7 +295,7 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
         .output()
         .is_err()
     {
-        eprintln!("skipped: tex not found");
+        skip("tex not found");
         return;
     }
     let bytes = std::fs::read(dir.join("r.dvi")).unwrap();
@@ -333,4 +333,12 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
     // plain TeX の \parindent = 20pt の後に A の幅 (0.75 em) + B の幅 (0.708334 em)。ページ左端の 72bp を足す
     let expected_x = 72.0 + (20.0 + (0.75 + 0.708334) * 10.0) * 72.0 / 72.27;
     assert!(close(x0, expected_x, 1e-3), "{x0} vs {expected_x}");
+}
+
+/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする
+fn skip(reason: &str) {
+    if std::env::var_os("SABI_STRICT_TESTS").is_some() {
+        panic!("required reference environment is missing: {reason}");
+    }
+    eprintln!("skipped: {reason}");
 }

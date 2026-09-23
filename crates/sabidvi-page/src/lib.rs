@@ -2,7 +2,8 @@
 //! 文字・規則・special を SabiRender の描画命令列に変換する。
 //!
 //! 座標: DVI の (h, v) は sp、原点はページ左上から 1 in 内側、v は下向き。dvipdfmx と同じく紙面の左上から
-//! (72 bp, 72 bp) の点を DVI の原点に置く。ページ空間は bp、原点左下、y 上向き。
+//! (72 bp, 72 bp) の点を DVI の原点に置く。ページ空間は bp、原点左下、y 上向き。紙面は `papersize` /
+//! `pdf:pagesize` special があればページ全体に効く（描画の前に走査して決める）。
 //!
 //! special の意味論は dvipdfmx（`spc_pdfm.c`）に従う:
 //!
@@ -14,7 +15,10 @@
 //! - `pdf:bxobj` … `exobj`: 描画を捕まえて名前に結びつけ、`uxobj` で現在位置に置く
 //! - `pdf:put @name << /K << /ca … >> >>`: 拡張図形状態の資源（PGF の不透明度）
 //!
-//! 文字は輪郭の供給源（[`GlyphSource`]）が返す輪郭で描く。返さない場合は数えて報告する。
+//! special の変換（`btrans`、`x:scale` など）は DVI の文字・規則にも効く。評価器の CTM は `bcontent` の原点
+//! からの座標をページ空間へ写すものなので、ページ空間で置かれる文字・規則には「原点を引いてから CTM」を掛ける。
+//!
+//! 文字は輪郭の供給源（[`FontSource`]）が返す輪郭で描く。返さない場合は数えて報告する。
 
 use sabidvi_format::{Direction, Dvi, DviError, FontDef, Glyphs, NativeFontDef, Op};
 use sabidvi_special::{ColorSpecial, DimTrans, PdfSpecial, Special, XtxSpecial};
@@ -51,10 +55,11 @@ pub trait FontSource {
         let _ = (font, code);
         None
     }
-    /// 字形の輪郭（字形単位）と、字形単位から em への比（1000 単位なら 0.001）
-    fn glyph(&self, font: &FontDef, code: u32) -> Option<(Path, f64)>;
+    /// 字形の輪郭（字形単位）と、字形単位から em（1 = フォントサイズ）への行列。
+    /// FontMatrix と、フォントマップの傾斜・横拡大を含む
+    fn glyph(&self, font: &FontDef, code: u32) -> Option<(Path, Matrix)>;
     /// XDV のネイティブフォントの字形
-    fn native_glyph(&self, font: &NativeFontDef, glyph_id: u16) -> Option<(Path, f64)> {
+    fn native_glyph(&self, font: &NativeFontDef, glyph_id: u16) -> Option<(Path, Matrix)> {
         let _ = (font, glyph_id);
         None
     }
@@ -67,12 +72,12 @@ impl FontSource for NoFonts {
     fn char_width(&self, _: &FontDef, _: u32) -> Option<f64> {
         None
     }
-    fn glyph(&self, _: &FontDef, _: u32) -> Option<(Path, f64)> {
+    fn glyph(&self, _: &FontDef, _: u32) -> Option<(Path, Matrix)> {
         None
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct PageReport {
     pub missing_width: usize,
     pub missing_glyph: usize,
@@ -80,10 +85,13 @@ pub struct PageReport {
     pub rules: usize,
     pub specials: usize,
     pub unsupported: Vec<String>,
-    /// `sabidvi:mark` の名前とページ空間の位置（bp）
+    /// `sabidvi:mark` の名前とページ空間の位置（bp）。special の変換を受けた後の位置
     pub marks: Vec<(String, f64, f64)>,
+    /// このページの実効的な紙面（`papersize` / `pdf:pagesize` を反映）
+    pub paper: Paper,
 }
 
+/// DVI の位置。tex.web §585 の h, v, w, x, y, z に、pTeX の組方向（push/pop で保存・復元される）を加える
 #[derive(Debug, Clone, Copy)]
 struct Position {
     h: i32,
@@ -92,6 +100,7 @@ struct Position {
     x: i32,
     y: i32,
     z: i32,
+    dir: Direction,
 }
 
 /// `pdf:put` で集めた資源と、`bxobj` で捕まえたフォーム
@@ -121,8 +130,25 @@ struct CapturedForm {
 pub struct PageExecutor<'d, 'f> {
     dvi: &'d Dvi<'d>,
     fonts: &'f dyn FontSource,
+    /// 既定の紙面。special で上書きされる
     pub paper: Paper,
     bp_per_sp: f64,
+}
+
+/// ページ全体に効く状態（紙面と、そこから決まる座標変換）
+struct PageFrame {
+    paper: Paper,
+    bp_per_sp: f64,
+}
+
+impl PageFrame {
+    /// DVI の (h, v)（sp）をページ空間（bp）へ
+    fn to_page(&self, h: i32, v: i32) -> (f64, f64) {
+        (
+            72.0 + h as f64 * self.bp_per_sp,
+            self.paper.height - 72.0 - v as f64 * self.bp_per_sp,
+        )
+    }
 }
 
 impl<'d, 'f> PageExecutor<'d, 'f> {
@@ -135,18 +161,67 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
         }
     }
 
-    /// DVI の (h, v)（sp）をページ空間（bp）へ
+    /// DVI の (h, v)（sp）を既定の紙面でページ空間（bp）へ
     pub fn to_page(&self, h: i32, v: i32) -> (f64, f64) {
-        (
-            72.0 + h as f64 * self.bp_per_sp,
-            self.paper.height - 72.0 - v as f64 * self.bp_per_sp,
-        )
+        PageFrame {
+            paper: self.paper,
+            bp_per_sp: self.bp_per_sp,
+        }
+        .to_page(h, v)
+    }
+
+    /// ページの special から紙面を決める（dvipdfmx はページのどこにあってもそのページ全体に効かせる）
+    fn paper_for(&self, ops: &[Op]) -> Paper {
+        let mut paper = self.paper;
+        for op in ops {
+            if let Op::Special(raw) = op {
+                match sabidvi_special::parse(raw) {
+                    Special::PaperSize(w, h) if w > 0.0 && h > 0.0 => {
+                        paper = Paper {
+                            width: w,
+                            height: h,
+                        }
+                    }
+                    Special::Pdf(PdfSpecial::PageSize(t)) => {
+                        if let (Some(w), Some(h)) = (t.width, t.height) {
+                            if w > 0.0 && h > 0.0 {
+                                paper = Paper {
+                                    width: w,
+                                    height: h,
+                                };
+                            }
+                        }
+                    }
+                    Special::Landscape => {
+                        paper = Paper {
+                            width: paper.height,
+                            height: paper.width,
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        paper
     }
 
     pub fn run_page(&self, index: usize) -> Result<(DisplayList, PageReport), DviError> {
         let ops = self.dvi.page_ops(index)?;
+        let frame = PageFrame {
+            paper: self.paper_for(&ops),
+            bp_per_sp: self.bp_per_sp,
+        };
         let mut out = DisplayList::default();
-        let mut report = PageReport::default();
+        let mut report = PageReport {
+            missing_width: 0,
+            missing_glyph: 0,
+            chars: 0,
+            rules: 0,
+            specials: 0,
+            unsupported: Vec::new(),
+            marks: Vec::new(),
+            paper: frame.paper,
+        };
         let resources = PageResources::default();
         let mut ev = Evaluator::new(Matrix::IDENTITY, &resources);
         let mut pos = Position {
@@ -156,9 +231,9 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
             x: 0,
             y: 0,
             z: 0,
+            dir: Direction::Yoko,
         };
         let mut stack: Vec<Position> = Vec::new();
-        let mut dir = Direction::Yoko;
         let mut font: Option<u32> = None;
         // special の状態
         let mut coord_stack: Vec<(f64, f64)> = Vec::new();
@@ -168,28 +243,33 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
 
         let sp = self.bp_per_sp;
         for op in &ops {
+            // ページ空間に置かれる文字・規則・目印に掛ける、special 由来の変換
+            let ctx = DrawContext {
+                frame: &frame,
+                ctm: page_ctm(&ev, &coord_stack),
+            };
             match op {
                 Op::SetChar(c) | Op::PutChar(c) => {
                     report.chars += 1;
                     let advance =
-                        self.draw_char(font, *c, &pos, &dir, &mut ev, &mut out, &mut report);
+                        self.draw_char(&ctx, font, *c, &pos, &mut ev, &mut out, &mut report);
                     if matches!(op, Op::SetChar(_)) {
-                        advance_right(&mut pos, &dir, advance);
+                        advance_right(&mut pos, advance);
                     }
                 }
                 Op::SetRule { height, width } | Op::PutRule { height, width } => {
                     report.rules += 1;
                     if *height > 0 && *width > 0 {
                         let (a, b) = (*height as f64 * sp, *width as f64 * sp);
-                        let (x, y) = self.to_page(pos.h, pos.v);
-                        let path = match dir {
+                        let (x, y) = frame.to_page(pos.h, pos.v);
+                        let path = match pos.dir {
                             Direction::Yoko => Path::rect(x, y, b, a),
                             // 縦組: 高さ a が左向き、幅 b が下向き
                             Direction::Tate => Path::rect(x - a, y - b, a, b),
                             Direction::Dtou => Path::rect(x, y, a, b),
                         };
                         out.push(Item::Fill {
-                            path,
+                            path: path.transform(&ctx.ctm),
                             ctm: Matrix::IDENTITY,
                             rule: FillRule::NonZero,
                             color: ev.state.fill_color,
@@ -197,13 +277,13 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                         });
                     }
                     if matches!(op, Op::SetRule { .. }) {
-                        advance_right(&mut pos, &dir, *width);
+                        advance_right(&mut pos, *width);
                     }
                 }
                 Op::SetGlyphs(g) => {
                     report.chars += g.ids.len();
-                    self.draw_native_glyphs(font, g, &pos, &mut ev, &mut out, &mut report);
-                    advance_right(&mut pos, &dir, g.width);
+                    self.draw_native_glyphs(&ctx, font, g, &pos, &mut ev, &mut out, &mut report);
+                    advance_right(&mut pos, g.width);
                 }
                 Op::Nop
                 | Op::Bop { .. }
@@ -219,42 +299,42 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                         pos = p;
                     }
                 }
-                Op::Right(d) => advance_right(&mut pos, &dir, *d),
+                Op::Right(d) => advance_right(&mut pos, *d),
                 Op::W0 => {
                     let d = pos.w;
-                    advance_right(&mut pos, &dir, d);
+                    advance_right(&mut pos, d);
                 }
                 Op::W(d) => {
                     pos.w = *d;
-                    advance_right(&mut pos, &dir, *d);
+                    advance_right(&mut pos, *d);
                 }
                 Op::X0 => {
                     let d = pos.x;
-                    advance_right(&mut pos, &dir, d);
+                    advance_right(&mut pos, d);
                 }
                 Op::X(d) => {
                     pos.x = *d;
-                    advance_right(&mut pos, &dir, *d);
+                    advance_right(&mut pos, *d);
                 }
-                Op::Down(d) => advance_down(&mut pos, &dir, *d),
+                Op::Down(d) => advance_down(&mut pos, *d),
                 Op::Y0 => {
                     let d = pos.y;
-                    advance_down(&mut pos, &dir, d);
+                    advance_down(&mut pos, d);
                 }
                 Op::Y(d) => {
                     pos.y = *d;
-                    advance_down(&mut pos, &dir, *d);
+                    advance_down(&mut pos, *d);
                 }
                 Op::Z0 => {
                     let d = pos.z;
-                    advance_down(&mut pos, &dir, d);
+                    advance_down(&mut pos, d);
                 }
                 Op::Z(d) => {
                     pos.z = *d;
-                    advance_down(&mut pos, &dir, *d);
+                    advance_down(&mut pos, *d);
                 }
                 Op::Font(k) => font = Some(*k),
-                Op::Dir(d) => dir = d.clone(),
+                Op::Dir(d) => pos.dir = *d,
                 Op::PicFile { path, .. } => {
                     report
                         .unsupported
@@ -262,7 +342,7 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                 }
                 Op::Special(raw) => {
                     report.specials += 1;
-                    let (x_user, y_user) = self.to_page(pos.h, pos.v);
+                    let (x_user, y_user) = frame.to_page(pos.h, pos.v);
                     let (ox, oy) = coord_stack.last().copied().unwrap_or((0.0, 0.0));
                     // dvipdfmx の spc_get_current_point: bcontent の原点からの相対位置
                     let (cx, cy) = (x_user - ox, y_user - oy);
@@ -382,6 +462,7 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                             PdfSpecial::Stream { .. } => {
                                 report.unsupported.push("pdf:stream".into())
                             }
+                            // 紙面は paper_for で先に反映済み
                             PdfSpecial::PageSize(_) => {}
                             PdfSpecial::Ignored(_) => {}
                             PdfSpecial::Unsupported(k) => {
@@ -439,8 +520,12 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                             }
                             XtxSpecial::Ignored(_) => {}
                         },
+                        // 紙面は paper_for で先に反映済み
                         Special::PaperSize(..) | Special::Landscape | Special::Config(_) => {}
-                        Special::Mark(name) => report.marks.push((name, x_user, y_user)),
+                        Special::Mark(name) => {
+                            let (mx, my) = ctx.ctm.apply(x_user, y_user);
+                            report.marks.push((name, mx, my));
+                        }
                         Special::Unsupported(s) => report.unsupported.push(s),
                         Special::Unknown(s) => {
                             report.unsupported.push(format!("unknown special: {s}"))
@@ -460,10 +545,10 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
     #[allow(clippy::too_many_arguments)]
     fn draw_char(
         &self,
+        ctx: &DrawContext,
         font: Option<u32>,
         code: u32,
         pos: &Position,
-        dir: &Direction,
         ev: &mut Evaluator,
         out: &mut DisplayList,
         report: &mut PageReport,
@@ -473,7 +558,7 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
             return 0;
         };
         let size = def.scaled_size as f64;
-        let advance = match dir {
+        let advance = match pos.dir {
             Direction::Yoko => self.fonts.char_width(def, code),
             _ => self
                 .fonts
@@ -488,23 +573,23 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
             }
         };
         match self.fonts.glyph(def, code) {
-            Some((outline, units_to_em)) => {
-                let (x, y) = self.to_page(pos.h, pos.v);
-                let scale = units_to_em * size * self.bp_per_sp;
-                let ctm = match dir {
-                    Direction::Yoko => Matrix::IDENTITY,
-                    // 縦組: 字形を時計回りに 90° 回して、文字の中心線を現在位置に合わせる（近似）
-                    Direction::Tate => Matrix::new(0.0, -1.0, 1.0, 0.0, x - y * 1.0, y + x * 1.0)
-                        .then(&Matrix::IDENTITY),
-                    Direction::Dtou => Matrix::IDENTITY,
+            Some((outline, to_em)) => {
+                let (x, y) = ctx.frame.to_page(pos.h, pos.v);
+                let em_bp = size * self.bp_per_sp;
+                // 字形単位 → em → bp → 位置。縦組は字形を時計回りに 90° 回す（近似）
+                let orient = match pos.dir {
+                    Direction::Yoko | Direction::Dtou => Matrix::IDENTITY,
+                    Direction::Tate => Matrix::new(0.0, -1.0, 1.0, 0.0, 0.0, 0.0),
                 };
-                let run = GlyphRun {
-                    glyphs: vec![PlacedGlyph { outline, x, y }],
-                    scale,
-                };
+                let transform = to_em
+                    .then(&Matrix::scale(em_bp, em_bp))
+                    .then(&orient)
+                    .then(&Matrix::translate(x, y));
                 out.push(Item::Glyphs {
-                    run,
-                    ctm,
+                    run: GlyphRun {
+                        glyphs: vec![PlacedGlyph { outline, transform }],
+                    },
+                    ctm: ctx.ctm,
                     color: ev.state.fill_color,
                     alpha: ev.state.fill_alpha,
                 });
@@ -514,8 +599,10 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
         advance_sp
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_native_glyphs(
         &self,
+        ctx: &DrawContext,
         font: Option<u32>,
         g: &Glyphs,
         pos: &Position,
@@ -528,14 +615,16 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
             return;
         };
         let mut glyphs = Vec::new();
-        let mut scale = 0.0;
+        let em_bp = def.size as f64 * self.bp_per_sp;
         for (i, id) in g.ids.iter().enumerate() {
             match self.fonts.native_glyph(def, *id) {
-                Some((outline, units_to_em)) => {
+                Some((outline, to_em)) => {
                     let (dx, dy) = g.positions[i];
-                    let (x, y) = self.to_page(pos.h + dx, pos.v + dy);
-                    scale = units_to_em * def.size as f64 * self.bp_per_sp;
-                    glyphs.push(PlacedGlyph { outline, x, y });
+                    let (x, y) = ctx.frame.to_page(pos.h + dx, pos.v + dy);
+                    let transform = to_em
+                        .then(&Matrix::scale(em_bp, em_bp))
+                        .then(&Matrix::translate(x, y));
+                    glyphs.push(PlacedGlyph { outline, transform });
                 }
                 None => report.missing_glyph += 1,
             }
@@ -548,8 +637,8 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
                 None => ev.state.fill_color,
             };
             out.push(Item::Glyphs {
-                run: GlyphRun { glyphs, scale },
-                ctm: Matrix::IDENTITY,
+                run: GlyphRun { glyphs },
+                ctm: ctx.ctm,
                 color,
                 alpha: ev.state.fill_alpha,
             });
@@ -557,16 +646,43 @@ impl<'d, 'f> PageExecutor<'d, 'f> {
     }
 }
 
-fn advance_right(pos: &mut Position, dir: &Direction, d: i32) {
-    match dir {
+/// 文字・規則を置くときの文脈
+struct DrawContext<'a> {
+    frame: &'a PageFrame,
+    /// ページ空間の点に掛ける、special 由来の変換
+    ctm: Matrix,
+}
+
+/// 評価器の CTM は「bcontent の原点からの座標 → ページ空間」。ページ空間で計算した点には原点を引いてから掛ける。
+/// special が何もしていなければ恒等になる
+fn page_ctm(ev: &Evaluator, coord_stack: &[(f64, f64)]) -> Matrix {
+    let (ox, oy) = coord_stack.last().copied().unwrap_or((0.0, 0.0));
+    let m = Matrix::translate(-ox, -oy).then(&ev.state.ctm);
+    // 丸め誤差で恒等がわずかにずれても恒等として扱う
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    if near(m.a, 1.0)
+        && near(m.b, 0.0)
+        && near(m.c, 0.0)
+        && near(m.d, 1.0)
+        && near(m.e, 0.0)
+        && near(m.f, 0.0)
+    {
+        Matrix::IDENTITY
+    } else {
+        m
+    }
+}
+
+fn advance_right(pos: &mut Position, d: i32) {
+    match pos.dir {
         Direction::Yoko => pos.h += d,
         Direction::Tate => pos.v += d,
         Direction::Dtou => pos.v -= d,
     }
 }
 
-fn advance_down(pos: &mut Position, dir: &Direction, d: i32) {
-    match dir {
+fn advance_down(pos: &mut Position, d: i32) {
+    match pos.dir {
         Direction::Yoko => pos.v += d,
         Direction::Tate => pos.h -= d,
         Direction::Dtou => pos.h += d,

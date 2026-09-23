@@ -92,7 +92,7 @@ pub struct Glyphs {
     pub text: Vec<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Yoko,
     Tate,
@@ -497,13 +497,22 @@ impl<'a> Dvi<'a> {
         }
         // ページは post の last_bop から逆向きに辿る
         let mut pages = Vec::new();
+        // ページは post の last_bop から逆向きに辿る。prev は必ず手前を指す（同じ位置や後ろを指せば循環）
         let mut p = last_bop;
+        let mut prev_at = usize::MAX;
         while p >= 0 {
             let at = p as usize;
             if at >= data.len() || data[at] != 139 {
                 return err(at, "bop pointer does not point at bop");
             }
+            if at >= prev_at {
+                return err(at, "bop chain does not go backwards (cycle)");
+            }
+            if pages.len() >= _total_pages as usize {
+                return err(at, "more bop pointers than the postamble's page count");
+            }
             pages.push(at);
+            prev_at = at;
             let mut rr = Reader::new(data);
             rr.pos = at + 1 + 40;
             p = rr.i32()?;

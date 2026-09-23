@@ -21,10 +21,14 @@ dvipdfmx 方言の `\special` を解釈して、装置非依存の描画命令�
 ## 座標
 
 - DVI の (h, v) は sp。原点はページ左上から 1 in 内側、v は下向き。
-- dvipdfmx と同じく紙面左上から (72 bp, 72 bp) の点を DVI の原点に置く。紙面は `papersize` / `pdf:pagesize` で変わる（既定は A4。dvipdfmx.cfg の `p` に相当）。
+- dvipdfmx と同じく紙面左上から (72 bp, 72 bp) の点を DVI の原点に置く。紙面は `papersize` / `pdf:pagesize` / `landscape` で変わる
+  （既定は A4。dvipdfmx.cfg の `p` に相当）。special はページのどこにあってもそのページ全体に効くので、描画の前にページの命令列を
+  走査して決め、実効値を `PageReport.paper` で返す。CLI の出力サイズと基線の既定値もこれを使う。
 - ページ空間（bp、原点左下、y 上向き）への写像: x = 72 + h·k、y = H − 72 − v·k（k = bp/sp、H = 紙面高さ）。
 - 縦組（pTeX の `dirchg` 1）: `right` は v を増やし、`down` は h を減らす（dvipdfmx `dvi.c`）。規則は幅と高さを入れ替えて置く。
-  字形の回転は v0 では近似。
+  組方向は h, v, w, x, y, z と一緒に `push` / `pop` で保存・復元する（pTeX は `save_dir` を復元して出力する）。字形の回転は v0 では近似。
+- special の変換（`pdf:btrans`、`x:scale` など）は DVI の文字・規則・目印にも効く。評価器の CTM は「`bcontent` の原点からの座標 →
+  ページ空間」なので、ページ空間で置く点には原点を引いてから CTM を掛ける（原点の平行移動を二重に掛けない）。
 
 ## special の意味論（dvipdfmx `spc_pdfm.c` に従う）
 
@@ -47,7 +51,8 @@ dvipdfmx 方言の `\special` を解釈して、装置非依存の描画命令�
 `FontSource` を通じて受け取る:
 
 - 文字幅（TFM の `fix_word`、デザインサイズに対する比）。位置の計算に必須
-- 字形の輪郭（字形単位）と字形単位から em への比。無ければ数えて報告する
+- 字形の輪郭（字形単位）と、字形単位から em への行列。Type1 は FontMatrix の全成分にフォントマップの `SlantFont` / `ExtendFont`
+  （dvipdfmx `fontmap.c`: [extend 0 slant 1 0 0]）を掛けたもの、OpenType は 1/unitsPerEm、仮想フォントは合成後の 1/1000。無ければ数えて報告する
 - XDV のネイティブフォントは字形 ID で直接引く
 
 TFM / JFM / VF / Type1 / OpenType の読み取りは SabiFace。`sabidvi-fonts` が VF の DVI 断片を再帰的に実行して部品の字形を一つの輪郭に合成する
@@ -63,7 +68,13 @@ TFM / JFM / VF / Type1 / OpenType の読み取りは SabiFace。`sabidvi-fonts` 
 4. **字形**: Computer Modern（Type1）、Times（VF → Type1）、Latin Modern（XDV ネイティブ）、upTeX の和文（VF → kanjix.map → OpenType）を
    実際に描いてインクの位置を確かめる（`crates/sabidvi-fonts/tests/glyphs.rs`）。
 
-エンジンやツールが無い環境ではテストを飛ばす。
+5. **手計算の期待値**: 手で組み立てた最小の DVI で、紙面指定・special の変換と罫線・push/pop と組方向・bop の循環を、
+   参照処理系に頼らず手計算の値と比べる（`crates/sabidvi-page/tests/synthetic.rs`）。同じ評価器で両側を読む幾何の照合だけでは
+   評価器の共通の誤りを見逃すため。
+
+エンジンやツールが無い環境ではテストを飛ばす。環境変数 `SABI_STRICT_TESTS` を設定すると飛ばす代わりに失敗にする。
+CI は純 Rust のジョブと、TeX Live を導入して `SABI_STRICT_TESTS=1` で走らせる oracle ジョブに分ける。
+不正な DVI（bop の前ページポインタが手前を指さない、postamble のページ数を超える）は有限時間で `Err` になる。
 
 ## 今後
 

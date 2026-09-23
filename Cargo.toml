@@ -9,10 +9,10 @@ license = "AGPL-3.0-only"
 repository = "https://github.com/syzygy-inc/SabiDVI"
 
 [workspace.dependencies]
-sabiface-metrics = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
-sabiface-glyph = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
-sabiface-map = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "f1647a2" }
-sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d87105f" }
-sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d87105f" }
-sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d87105f" }
-sabirender-svg = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d87105f" }
+sabiface-metrics = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
+sabiface-glyph = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
+sabiface-map = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
+sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
+sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
+sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }
+sabirender-svg = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0ac8b0" }

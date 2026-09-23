@@ -109,6 +109,8 @@ fn main() {
             .as_ref()
             .map(|m| if multi { numbered(m, p) } else { m.clone() });
         let (list, report) = exec.run_page(p - 1).unwrap_or_else(|e| fail(e));
+        // 紙面は special で変わり得るので、ページごとの実効値を使う
+        let paper = report.paper;
         let mut skipped: Vec<String> = Vec::new();
         if out_path.ends_with(".svg") {
             let opts = SvgOptions {

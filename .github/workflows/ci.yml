@@ -9,6 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # 純 Rust: 参照環境が無いテストは skip される
   test:
     runs-on: ubuntu-latest
     steps:
@@ -22,5 +23,24 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
+        run: cargo test --workspace
 
+  # 参照環境あり: TeX Live のエンジン・dvipdfmx・フォントを導入し、skip を失敗にして oracle を必ず実行する
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-binaries texlive-base texlive-fonts-recommended texlive-pictures \
+            texlive-lang-japanese fonts-haranoaji
+          kpsewhich cmr10.tfm utmr8a.pfb ptmr7t.vf lmroman10-regular.otf uprml-h.tfm HaranoAjiMincho-Regular.otf
+          which tex etex uptex xetex dvipdfmx
+      - name: Test (strict)
+        env:
+          SABI_STRICT_TESTS: "1"
         run: cargo test --workspace

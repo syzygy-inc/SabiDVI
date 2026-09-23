@@ -16,7 +16,7 @@ fn run_engine(engine: &str, args: &[&str], name: &str, source: &str) -> Option<V
         .current_dir(&dir)
         .output();
     let Ok(out) = status else {
-        eprintln!("skipped: {engine} not found");
+        skip(&format!("{engine} not found"));
         return None;
     };
     let ext = if args.contains(&"-no-pdf") {
@@ -127,4 +127,12 @@ fn xetex_xdv_has_native_fonts_and_glyphs() {
     assert_eq!(glyphs.ids.len(), 5);
     assert_eq!(glyphs.positions.len(), 5);
     assert!(glyphs.width > 0);
+}
+
+/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする
+fn skip(reason: &str) {
+    if std::env::var_os("SABI_STRICT_TESTS").is_some() {
+        panic!("required reference environment is missing: {reason}");
+    }
+    eprintln!("skipped: {reason}");
 }

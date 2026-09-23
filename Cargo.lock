@@ -52,7 +52,7 @@ dependencies = [
 [[package]]
 name = "sabiface-glyph"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=f1647a2#f1647a297a2cdbd58ec8a2ab3283f59f6746f92c"
+source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=47d16ca#47d16ca6afc69ea9f4a240af54d9af3c9e9619db"
 dependencies = [
  "ttf-parser",
 ]
@@ -60,17 +60,17 @@ dependencies = [
 [[package]]
 name = "sabiface-map"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=f1647a2#f1647a297a2cdbd58ec8a2ab3283f59f6746f92c"
+source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=47d16ca#47d16ca6afc69ea9f4a240af54d9af3c9e9619db"
 
 [[package]]
 name = "sabiface-metrics"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=f1647a2#f1647a297a2cdbd58ec8a2ab3283f59f6746f92c"
+source = "git+https://github.com/syzygy-inc/SabiFace.git?rev=47d16ca#47d16ca6afc69ea9f4a240af54d9af3c9e9619db"
 
 [[package]]
 name = "sabirender-content"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d0ac8b0#d0ac8b094aef77c9050d301a5fe1921619bdd334"
 dependencies = [
  "sabirender-display",
 ]
@@ -78,12 +78,12 @@ dependencies = [
 [[package]]
 name = "sabirender-display"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d0ac8b0#d0ac8b094aef77c9050d301a5fe1921619bdd334"
 
 [[package]]
 name = "sabirender-raster"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d0ac8b0#d0ac8b094aef77c9050d301a5fe1921619bdd334"
 dependencies = [
  "sabirender-display",
 ]
@@ -91,7 +91,7 @@ dependencies = [
 [[package]]
 name = "sabirender-svg"
 version = "0.0.1"
-source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d87105f#d87105fc133a63cd1240100b6e40b9090e15bf18"
+source = "git+https://github.com/syzygy-inc/SabiRender.git?rev=d0ac8b0#d0ac8b094aef77c9050d301a5fe1921619bdd334"
 dependencies = [
  "sabirender-display",
 ]

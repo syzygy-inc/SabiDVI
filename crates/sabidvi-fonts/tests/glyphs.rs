@@ -19,7 +19,7 @@ fn run(engine: &str, args: &[&str], name: &str, src: &str) -> Option<Vec<u8>> {
         .output()
         .is_err()
     {
-        eprintln!("skipped: {engine} not found");
+        skip(&format!("{engine} not found"));
         return None;
     }
     let ext = if args.contains(&"-no-pdf") {
@@ -102,7 +102,7 @@ fn virtual_font_glyphs_are_composed_from_type1_parts() {
         .and_then(|f| sabidvi_fonts::Locator::find(&Kpse::default(), &f))
         .is_none()
     {
-        eprintln!("skipped: Times (utmr8a.pfb) not installed");
+        skip("Times (utmr8a.pfb) not installed");
         return;
     }
     let dvi = Dvi::parse(&data).unwrap();
@@ -138,7 +138,9 @@ fn virtual_font_glyphs_are_composed_from_type1_parts() {
     let width =
         xs.iter().cloned().fold(f64::MIN, f64::max) - xs.iter().cloned().fold(f64::MAX, f64::min);
     assert!((500.0..900.0).contains(&width), "A width {width}");
-    assert!((first.scale - 0.001 * 10.0 * 72.0 / 72.27).abs() < 1e-9);
+    // 字形単位 (1000/em) → bp: 10pt のフォントなので 0.001 × 10 × 72/72.27
+    let m = first.glyphs[0].transform;
+    assert!((m.a - 0.001 * 10.0 * 72.0 / 72.27).abs() < 1e-9 && m.b.abs() < 1e-12);
 }
 
 #[test]
@@ -166,7 +168,7 @@ fn uptex_japanese_glyphs_come_through_vf_and_kanjix_map() {
     };
     let fonts = SabiFonts::new(Kpse::default());
     let Some(entry) = fonts.map().get_kanji("uprml-h").cloned() else {
-        eprintln!("skipped: uprml-h not in kanjix.map");
+        skip("uprml-h not in kanjix.map");
         return;
     };
     if sabidvi_fonts::Locator::find(
@@ -184,4 +186,12 @@ fn uptex_japanese_glyphs_come_through_vf_and_kanjix_map() {
     assert_eq!(report.missing_glyph, 0, "{report:?}");
     // 全角 2 文字 = 2 × 10pt ≈ 27.7 画素
     assert!((20..=40).contains(&(x1 - x0)), "width {}", x1 - x0);
+}
+
+/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする
+fn skip(reason: &str) {
+    if std::env::var_os("SABI_STRICT_TESTS").is_some() {
+        panic!("required reference environment is missing: {reason}");
+    }
+    eprintln!("skipped: {reason}");
 }
