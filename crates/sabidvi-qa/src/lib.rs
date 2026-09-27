@@ -57,7 +57,9 @@ fn record(line: &str) {
         .append(true)
         .open(file)
     {
-        let _ = writeln!(f, "{line}");
+        // Cases run on parallel test threads; one write call per line keeps
+        // the appends whole (a formatted write would issue several).
+        let _ = f.write_all(format!("{line}\n").as_bytes());
     }
 }
 
