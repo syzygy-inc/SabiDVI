@@ -57,6 +57,8 @@ jobs:
         run: |
           for t in tex etex uptex xetex dvipdfmx kpsewhich; do printf '%s: ' "$t"; which "$t" || echo "(missing)"; done
           for f in cmr10.tfm cmr10.pfb utmr8a.pfb ptmr7t.vf lmroman10-regular.otf uprml-h.tfm upjisr-h.tfm HaranoAjiMincho-Regular.otf; do printf '%s: ' "$f"; kpsewhich "$f" || echo "(missing)"; done
+      - name: Reference resources (lock; required present, digests match the baseline)
+        run: sh scripts/qa-resources.sh check
       - name: Test (strict for the core environment)
         env:
           SABI_STRICT_TESTS: "1"

@@ -28,4 +28,9 @@ special の解釈）は `cargo test` の単体テストとして常に実行し�
 
 oracle プロファイルの基準は TeX Live 2025 の配布物。CI は Ubuntu の `texlive-binaries` / `texlive-base` /
 `texlive-fonts-recommended` / `texlive-pictures`（中核）と、`texlive-lang-japanese` / `fonts-haranoaji` / `fonts-lmodern`（任意）を導入する
-（`.github/workflows/ci.yml`）。版と digest の台帳化は段階 1 の残件。
+（`.github/workflows/ci.yml`）。
+各 case が参照するファイルの sha256 は [resources.lock](resources.lock) に固定し、`scripts/qa-resources.sh check` が
+kpsewhich で解決したファイルの digest を照合する（必須資源の不在と digest の相違は失敗。任意資源の不在は
+`SABI_STRICT_OPTIONAL` のときだけ失敗。エンジンの版は表示のみ）。基準を更新するときは手元の TeX Live で
+`scripts/qa-resources.sh record` を実行し、差分を変更管理に載せる。`pdftex.map` / `kanjix.map` は updmap が生成するので
+digest を固定せず、存在のみ CI の診断で確認する。
