@@ -5,7 +5,7 @@
 
 use sabidvi_format::{Dvi, FontDef};
 use sabidvi_page::{FontSource, PageExecutor, Paper};
-use sabidvi_qa::{kpsewhich, run_tool, Case};
+use sabidvi_qa::{engine_blocked, kpsewhich, run_tool, Case};
 use sabirender_content::{Evaluator, NoResources};
 use sabirender_display::{DisplayList, Item, Matrix, Path, Segment};
 
@@ -54,6 +54,10 @@ fn build(case: &Case) -> Option<(Vec<u8>, Vec<u8>)> {
     let dir = std::env::temp_dir().join(format!("sabidvi-pgf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("p.tex"), SOURCE).unwrap();
+    if let Some(why) = engine_blocked("etex", &[]) {
+        case.blocked(&why);
+        return None;
+    }
     if run_tool(
         case,
         "etex",
@@ -301,6 +305,9 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
         "\\font\\a=cmr10 \\a AB\\vrule width 10pt height 5pt depth 1pt\\bye\n",
     )
     .unwrap();
+    if let Some(why) = engine_blocked("tex", &[]) {
+        return case.blocked(&why);
+    }
     if run_tool(
         &case,
         "tex",

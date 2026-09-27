@@ -50,9 +50,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends texlive-binaries texlive-base texlive-fonts-recommended texlive-pictures
-      - name: Install optional engines and fonts
-        continue-on-error: true
-        run: sudo apt-get install -y --no-install-recommends texlive-lang-japanese fonts-haranoaji fonts-lmodern
+      - name: Install optional engines and fonts (one by one; an absent package is BLOCKED in the ledger, not a CI failure)
+        run: |
+          for p in texlive-xetex texlive-lang-japanese fonts-lmodern fonts-haranoaji; do
+            sudo apt-get install -y --no-install-recommends "$p" || echo "::warning::$p not installed"
+          done
       - name: Diagnose the reference environment
         run: |
           for t in tex etex uptex xetex dvipdfmx kpsewhich; do printf '%s: ' "$t"; which "$t" || echo "(missing)"; done

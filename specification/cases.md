@@ -27,7 +27,8 @@ special の解釈）は `cargo test` の単体テストとして常に実行し�
 ## 参照資源のロック
 
 oracle プロファイルの基準は TeX Live 2025 の配布物。CI は Ubuntu の `texlive-binaries` / `texlive-base` /
-`texlive-fonts-recommended` / `texlive-pictures`（中核）と、`texlive-lang-japanese` / `fonts-haranoaji` / `fonts-lmodern`（任意）を導入する
+`texlive-fonts-recommended` / `texlive-pictures`（中核）と、`texlive-xetex` / `texlive-lang-japanese` / `fonts-lmodern` / `fonts-haranoaji`（任意。
+無い package は飛ばす）を導入する。エンジンは実行ファイルの有無でなく「空の文書を組めるか」で使用可否を判定し、format が作れなければ BLOCKED にする
 （`.github/workflows/ci.yml`）。
 各 case が参照するファイルの sha256 は [resources.lock](resources.lock) に固定し、`scripts/qa-resources.sh check` が
 kpsewhich で解決したファイルの digest を照合する（必須資源の不在と digest の相違は失敗。任意資源の不在は

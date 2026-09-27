@@ -4,7 +4,7 @@
 use sabidvi_fonts::{Kpse, MemoryLocator, SabiFonts};
 use sabidvi_format::{Dvi, FontDef};
 use sabidvi_page::{FontSource, PageExecutor, Paper};
-use sabidvi_qa::{kpsewhich, run_tool, Case};
+use sabidvi_qa::{engine_blocked, kpsewhich, run_tool, Case};
 use sabirender_display::Item;
 use sabirender_raster::{page_to_device, render, Canvas};
 
@@ -16,6 +16,12 @@ fn run(case: &Case, engine: &str, args: &[&str], name: &str, src: &str) -> Optio
     full.push("-interaction=batchmode");
     let file = format!("{name}.tex");
     full.push(&file);
+    // エンジンが無い・format が作れない等は BLOCKED。起動できるのに本番の入力で失敗すれば FAIL
+    if let Some(why) = engine_blocked(engine, args) {
+        let _ = std::fs::remove_dir_all(&dir);
+        case.blocked(&why);
+        return None;
+    }
     if run_tool(case, engine, &full, Some(&dir)).is_none() {
         case.blocked(&format!("{engine} not found"));
         return None;

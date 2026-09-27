@@ -2,7 +2,7 @@
 //! 各テストは契約 case（`specification/cases.md`）。エンジンが無ければ BLOCKED、起動したのに DVI を出さなければ FAIL。
 
 use sabidvi_format::{Direction, Dvi, Kind, Op};
-use sabidvi_qa::{run_tool, Case};
+use sabidvi_qa::{engine_blocked, run_tool, Case};
 
 fn run_engine(
     case: &Case,
@@ -18,6 +18,12 @@ fn run_engine(
     full.push("-interaction=batchmode");
     let file = format!("{name}.tex");
     full.push(&file);
+    // エンジンが無い・format が作れない等は BLOCKED。起動できるのに本番の入力で失敗すれば FAIL
+    if let Some(why) = engine_blocked(engine, args) {
+        let _ = std::fs::remove_dir_all(&dir);
+        case.blocked(&why);
+        return None;
+    }
     if run_tool(case, engine, &full, Some(&dir)).is_none() {
         case.blocked(&format!("{engine} not found"));
         return None;

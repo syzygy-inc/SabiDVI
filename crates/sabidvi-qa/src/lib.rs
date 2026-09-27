@@ -196,6 +196,46 @@ pub fn run_tool(
     }
 }
 
+/// TeX エンジンが「起動して空の文書を組める」かを確かめる。無い、または format が作れない（Ubuntu の
+/// `texlive-binaries` だけでは `uptex.fmt` / `xetex.fmt` が無い）等で空の文書すら組めなければ `Some(理由)`。
+/// これは環境不足（BLOCKED）であり、その後に本番の入力で失敗したとき（FAIL）と区別する
+pub fn engine_blocked(program: &str, args: &[&str]) -> Option<String> {
+    // 同じテストバイナリの case は並行に走るので、プロセス番号だけでは作業ディレクトリが衝突する
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("sabi-probe-{program}-{}-{seq}", std::process::id()));
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Some(format!("cannot create {}: {e}", dir.display()));
+    }
+    if let Err(e) = std::fs::write(dir.join("probe.tex"), "\\end\n") {
+        return Some(format!("cannot write probe.tex: {e}"));
+    }
+    let out = std::process::Command::new(program)
+        .args(args)
+        .arg("-interaction=batchmode")
+        .arg("probe.tex")
+        .current_dir(&dir)
+        .output();
+    let _ = std::fs::remove_dir_all(&dir);
+    match out {
+        Err(e) => Some(format!("{program}: {e}")),
+        Ok(o) if !o.status.success() => {
+            let err = String::from_utf8_lossy(&o.stderr);
+            let last = err
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("");
+            Some(format!(
+                "{program} cannot typeset an empty document ({}): {last}",
+                o.status
+            ))
+        }
+        Ok(_) => None,
+    }
+}
+
 /// `kpsewhich` でファイルを探す。kpsewhich 自体が無ければ None、無いファイルも None
 pub fn kpsewhich(name: &str) -> Option<PathBuf> {
     let out = std::process::Command::new("kpsewhich")
