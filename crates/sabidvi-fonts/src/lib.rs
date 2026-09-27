@@ -70,6 +70,12 @@ impl MemoryLocator {
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
     }
+
+    /// 記録した「見つからなかった名前」を消す。実行（render）ごとの欠落を報告したいとき、実行の前に呼ぶ
+    /// （束に加えられたファイルが前回の欠落のまま報告されないように）
+    pub fn reset_missing(&self) {
+        self.misses.borrow_mut().clear();
+    }
 }
 
 impl Locator for MemoryLocator {

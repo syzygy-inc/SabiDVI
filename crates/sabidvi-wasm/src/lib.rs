@@ -143,9 +143,14 @@ pub unsafe extern "C" fn sabidvi_render(
     if !(scale.is_finite() && scale > 0.0 && scale < 1000.0) {
         return fail("scale out of range");
     }
+    if !(margin.is_finite() && margin >= 0.0) {
+        return fail("margin out of range");
+    }
     // フォント束は毎回取り直す（追加されたファイルを反映するため）。束は複製せず借りたまま使う
     let result = FILES.with(|f| {
         let files = f.borrow();
+        // `missing` はこの呼び出しで見つからなかったものだけにする（前回の欠落を引き継がない）
+        files.reset_missing();
         let fonts = SabiFonts::new(&*files);
         let exec = PageExecutor::new(&dvi, &fonts, Paper::A4);
         let (list, report) = match exec.run_page(page as usize - 1) {
@@ -247,13 +252,64 @@ mod tests {
         ops.extend_from_slice(s.as_bytes());
     }
 
-    /// 罫線 1 本と基線の目印だけの 1 ページ
-    fn dvi_bytes() -> Vec<u8> {
+    /// 罫線 `width_pt` × `height_pt` と基線の目印だけのページ
+    fn rule_page(width_pt: i32, height_pt: i32) -> Vec<u8> {
         let mut ops = Vec::new();
         special(&mut ops, "sabidvi:mark baseline");
         ops.push(137);
-        ops.extend_from_slice(&655360i32.to_be_bytes()); // 高さ 10pt
-        ops.extend_from_slice(&(655360i32 * 2).to_be_bytes()); // 幅 20pt
+        ops.extend_from_slice(&(65536 * height_pt).to_be_bytes());
+        ops.extend_from_slice(&(65536 * width_pt).to_be_bytes());
+        ops
+    }
+
+    /// 与えたページ列（各ページの命令列）からフォント定義の無い DVI を組む
+    fn dvi_with_pages(pages: &[Vec<u8>]) -> Vec<u8> {
+        let mut d = vec![247, 2];
+        for n in [25400000u32, 473628672, 1000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.push(0);
+        let mut prev = -1i32;
+        for ops in pages {
+            let bop = d.len() as i32;
+            d.push(139);
+            d.extend_from_slice(&[0; 40]);
+            d.extend_from_slice(&prev.to_be_bytes());
+            d.extend_from_slice(ops);
+            d.push(140);
+            prev = bop;
+        }
+        let post = d.len() as i32;
+        d.push(248);
+        d.extend_from_slice(&prev.to_be_bytes());
+        for n in [25400000u32, 473628672, 1000, 10000000, 10000000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.extend_from_slice(&[0, 1]);
+        d.extend_from_slice(&(pages.len() as u16).to_be_bytes());
+        d.push(249);
+        d.extend_from_slice(&post.to_be_bytes());
+        d.extend_from_slice(&[2, 223, 223, 223, 223]);
+        d
+    }
+
+    /// 罫線 1 本（20pt × 10pt）と基線の目印だけの 1 ページ
+    fn dvi_bytes() -> Vec<u8> {
+        dvi_with_pages(&[rule_page(2 * 10, 10)])
+    }
+
+    /// fnt_def1 0 "nofont" と set_char 'A'、罫線 1 本（10pt 四方）の 1 ページ。束に nofont が無ければ Partial になる
+    fn dvi_with_missing_font() -> Vec<u8> {
+        let mut ops = vec![243, 0, 0, 0, 0, 0];
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&[0, 6]);
+        ops.extend_from_slice(b"nofont");
+        ops.push(171);
+        ops.push(b'A');
+        ops.push(137);
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&655360i32.to_be_bytes());
         let mut d = vec![247, 2];
         for n in [25400000u32, 473628672, 1000] {
             d.extend_from_slice(&n.to_be_bytes());
@@ -271,10 +327,16 @@ mod tests {
         for n in [25400000u32, 473628672, 1000, 10000000, 10000000] {
             d.extend_from_slice(&n.to_be_bytes());
         }
-        d.extend_from_slice(&[0, 1, 0, 1, 249]);
+        d.extend_from_slice(&[0, 1, 0, 1]);
+        d.extend_from_slice(&ops[..22]);
+        d.push(249);
         d.extend_from_slice(&post.to_be_bytes());
         d.extend_from_slice(&[2, 223, 223, 223, 223]);
         d
+    }
+
+    fn meta_string() -> String {
+        String::from_utf8(META.with(|m| m.borrow().clone())).unwrap()
     }
 
     #[test]
@@ -357,42 +419,10 @@ mod tests {
     /// C-RESULT: フォントの無い文字を含むページは Partial（1）で、画像と meta が同じ実行のもの
     #[test]
     fn partial_render_reports_missing_fonts_with_a_consistent_image() {
-        // fnt_def1 0 "nofont" と set_char 'A'、罫線 1 本
-        let mut ops = vec![243, 0, 0, 0, 0, 0];
-        ops.extend_from_slice(&655360i32.to_be_bytes());
-        ops.extend_from_slice(&655360i32.to_be_bytes());
-        ops.extend_from_slice(&[0, 6]);
-        ops.extend_from_slice(b"nofont");
-        ops.push(171);
-        ops.push(b'A');
-        ops.push(137);
-        ops.extend_from_slice(&655360i32.to_be_bytes());
-        ops.extend_from_slice(&655360i32.to_be_bytes());
-        let mut d = vec![247, 2];
-        for n in [25400000u32, 473628672, 1000] {
-            d.extend_from_slice(&n.to_be_bytes());
-        }
-        d.push(0);
-        let bop = d.len() as i32;
-        d.push(139);
-        d.extend_from_slice(&[0; 40]);
-        d.extend_from_slice(&(-1i32).to_be_bytes());
-        d.extend_from_slice(&ops);
-        d.push(140);
-        let post = d.len() as i32;
-        d.push(248);
-        d.extend_from_slice(&bop.to_be_bytes());
-        for n in [25400000u32, 473628672, 1000, 10000000, 10000000] {
-            d.extend_from_slice(&n.to_be_bytes());
-        }
-        d.extend_from_slice(&[0, 1, 0, 1]);
-        d.extend_from_slice(&ops[..22]);
-        d.push(249);
-        d.extend_from_slice(&post.to_be_bytes());
-        d.extend_from_slice(&[2, 223, 223, 223, 223]);
+        let d = dvi_with_missing_font();
         sabidvi_clear_files();
         let status = unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) };
-        let meta = String::from_utf8(META.with(|m| m.borrow().clone())).unwrap();
+        let meta = meta_string();
         assert_eq!(status, 1, "{meta}");
         // 探した順に、map（束に無い）→ フォント名の tfm / vf / pfb
         assert!(
@@ -403,5 +433,89 @@ mod tests {
         // 罫線だけは描かれている: 10pt 四方 + 余白
         assert!(meta.contains("\"width\":48,\"height\":48"), "{meta}");
         assert_eq!(sabidvi_pixels_len(), 48 * 48 * 4);
+    }
+
+    /// C-JOB: フォント束は render をまたいで持続し（取り寄せて呼び直す方式のため）、`sabidvi_clear_files` で
+    /// 新しいジョブになる。同じ名前の add_file は置き換え
+    #[test]
+    fn the_file_bundle_persists_across_renders_until_cleared() {
+        let d = dvi_with_missing_font();
+        sabidvi_clear_files();
+        assert_eq!(
+            unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) },
+            1
+        );
+        assert!(meta_string().contains("\"nofont.tfm\""));
+        // 束に加えると（内容が不正でも）「見つからない」には数えない
+        let name = b"nofont.tfm";
+        let junk = [1u8, 2, 3];
+        for _ in 0..2 {
+            let r =
+                unsafe { sabidvi_add_file(name.as_ptr(), name.len(), junk.as_ptr(), junk.len()) };
+            assert_eq!(r, 0);
+        }
+        assert_eq!(sabidvi_file_count(), 1, "same name replaces");
+        let status = unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) };
+        let meta = meta_string();
+        assert_ne!(status, 2, "{meta}");
+        assert!(!meta.contains("\"nofont.tfm\""), "{meta}");
+        // 束は次の render でも生きている
+        unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) };
+        assert!(!meta_string().contains("\"nofont.tfm\""));
+        // clear で新しいジョブ: また見つからない
+        sabidvi_clear_files();
+        assert_eq!(sabidvi_file_count(), 0);
+        assert_eq!(
+            unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) },
+            1
+        );
+        assert!(meta_string().contains("\"nofont.tfm\""));
+    }
+
+    /// C-RESULT / C-JOB: render のたびに画像と meta は要求したページのものに置き換わり、前のページに戻しても
+    /// 状態が漏れない（DVI をページ間で共有しても結果は各呼び出しのもの）
+    #[test]
+    fn each_render_replaces_the_image_and_meta_for_the_requested_page() {
+        let d = dvi_with_pages(&[rule_page(20, 10), rule_page(10, 10)]);
+        assert_eq!(unsafe { sabidvi_page_count(d.as_ptr(), d.len()) }, 2);
+        let dims = |page: u32| {
+            assert_eq!(
+                unsafe { sabidvi_render(d.as_ptr(), d.len(), page, 4.0, 1.0) },
+                0
+            );
+            let meta = meta_string();
+            let w: usize = meta
+                .split("\"width\":")
+                .nth(1)
+                .and_then(|s| s.split(',').next())
+                .and_then(|s| s.parse().ok())
+                .unwrap();
+            let h: usize = meta
+                .split("\"height\":")
+                .nth(1)
+                .and_then(|s| s.split(',').next())
+                .and_then(|s| s.parse().ok())
+                .unwrap();
+            assert_eq!(sabidvi_pixels_len(), w * h * 4, "{meta}");
+            (w, h)
+        };
+        assert_eq!(dims(1), (88, 48));
+        assert_eq!(dims(2), (48, 48));
+        assert_eq!(dims(1), (88, 48));
+    }
+
+    /// C-RESOURCE: 余白が非有限・負なら誤り（NaN のまま進めると大きさ 1×1 の画像と壊れた JSON になる）
+    #[test]
+    fn non_finite_or_negative_margin_is_an_error() {
+        let d = dvi_bytes();
+        for m in [f64::NAN, f64::INFINITY, -1.0] {
+            assert_eq!(
+                unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, m) },
+                2,
+                "margin {m}"
+            );
+            assert_eq!(sabidvi_pixels_len(), 0);
+            assert!(meta_string().contains("margin out of range"));
+        }
     }
 }

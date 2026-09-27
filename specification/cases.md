@@ -22,7 +22,7 @@ PASS / FAIL / BLOCKED / NOT-RUN と比較件数を残す。`scripts/qa-ledger.sh
 | DVI-TFM-POSITION | C-DVI, C-FONT | dvi-core | required | tex、cmr10.tfm | 文字と規則の位置を TFM の幅と手計算で確認 |
 
 外部資源に依らない検査（手計算の期待値による紙面・変換・組方向・bop の循環・字形の変換、wasm の失敗と部分結果、
-special の解釈）は `cargo test` の単体テストとして常に実行し、台帳には載せない。
+special の解釈、wasm の C ABI のジョブ境界と引数の範囲。[abi.md](abi.md)）は `cargo test` の単体テストとして常に実行し、台帳には載せない。
 
 ## 参照資源のロック
 
