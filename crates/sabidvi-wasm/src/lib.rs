@@ -169,10 +169,10 @@ pub unsafe extern "C" fn sabidvi_render(
         };
         let cw = (pw * scale).ceil().max(1.0) as usize;
         let ch = (ph * scale).ceil().max(1.0) as usize;
-        if cw * ch > 64 * 1024 * 1024 {
-            return Err("image too large".into());
-        }
-        let mut canvas = Canvas::new(cw, ch);
+        // 確保の前に上限を検査する（Canvas::MAX_PIXELS、f64 RGBA で 512 MB）
+        let Some(mut canvas) = Canvas::try_new(cw, ch) else {
+            return Err(format!("image too large ({cw} x {ch} pixels)"));
+        };
         let m = Matrix::translate(-bx, -by).then(&page_to_device(ph, scale * 72.0));
         let raster = render(&list, &mut canvas, &m);
         let baseline = report
