@@ -12,10 +12,10 @@ repository = "https://github.com/syzygy-inc/SabiDVI"
 sabiface-metrics = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
 sabiface-glyph = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
 sabiface-map = { git = "https://github.com/syzygy-inc/SabiFace.git", rev = "47d16ca" }
-sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "f6a0d57" }
-sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "f6a0d57" }
-sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "f6a0d57" }
-sabirender-svg = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "f6a0d57" }
+sabirender-display = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0a4489" }
+sabirender-content = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0a4489" }
+sabirender-raster = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0a4489" }
+sabirender-svg = { git = "https://github.com/syzygy-inc/SabiRender.git", rev = "d0a4489" }
 
 [profile.release]
 opt-level = "z"

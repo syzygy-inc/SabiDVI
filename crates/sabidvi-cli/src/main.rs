@@ -148,7 +148,9 @@ fn main() {
             let m = sabirender_raster::display::Matrix::translate(-bx, -by)
                 .then(&page_to_device(ph, dpi));
             let raster = render(&list, &mut canvas, &m);
+            // 予算到達（描いたが精度を保証しない）も未対応と同じく数える
             skipped = raster.skipped;
+            skipped.extend(raster.budget);
             let bytes = png::encode_rgba8(cw as u32, ch as u32, &canvas.to_rgba8());
             std::fs::write(&out_path, bytes).unwrap_or_else(|e| fail(format!("{out_path}: {e}")));
             eprintln!("{out_path}: {cw}x{ch}");

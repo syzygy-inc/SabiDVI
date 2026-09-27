@@ -190,10 +190,12 @@ pub unsafe extern "C" fn sabidvi_render(
             Some(b) => (b.xmin, b.ymin, b.xmax, b.ymax),
             None => (0.0, 0.0, 0.0, 0.0),
         };
+        // 予算到達（描いたが精度を保証しない）も成功と区別して利用側に渡す
         let unsupported: Vec<String> = report
             .unsupported
             .iter()
             .chain(raster.skipped.iter())
+            .chain(raster.budget.iter())
             .map(|s| format!("\"{}\"", json_escape(s)))
             .collect();
         let meta = format!(
