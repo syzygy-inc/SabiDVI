@@ -199,6 +199,9 @@ enum GlyphFont {
     OpenType {
         data: Vec<u8>,
         index: u32,
+        /// フォントマップの `SlantFont` / `ExtendFont`。Type1 と同じく字形の行列に掛ける
+        slant: f64,
+        extend: f64,
     },
     Virtual(Vf),
     Missing,
@@ -209,6 +212,8 @@ pub struct SabiFonts<L: Locator> {
     map: FontMap,
     metrics: RefCell<HashMap<String, Option<Rc<Metrics>>>>,
     glyphs: RefCell<HashMap<String, Rc<GlyphFont>>>,
+    /// 仮想フォントの合成の入れ子の深さ
+    vf_depth: std::cell::Cell<usize>,
 }
 
 impl<L: Locator> SabiFonts<L> {
@@ -229,6 +234,7 @@ impl<L: Locator> SabiFonts<L> {
             map,
             metrics: RefCell::new(HashMap::new()),
             glyphs: RefCell::new(HashMap::new()),
+            vf_depth: std::cell::Cell::new(0),
         }
     }
 
@@ -293,12 +299,22 @@ impl<L: Locator> SabiFonts<L> {
                     extend: entry.extend.unwrap_or(1.0),
                 });
             }
-            return Some(GlyphFont::OpenType { data, index: 0 });
+            return Some(GlyphFont::OpenType {
+                data,
+                index: 0,
+                slant: entry.slant.unwrap_or(0.0),
+                extend: entry.extend.unwrap_or(1.0),
+            });
         }
         if let Some(entry) = self.map.get_kanji(name) {
             let (index, file) = split_ttc_index(&entry.font_file);
             let data = self.locator.read(file)?;
-            return Some(GlyphFont::OpenType { data, index });
+            return Some(GlyphFont::OpenType {
+                data,
+                index,
+                slant: 0.0,
+                extend: 1.0,
+            });
         }
         // map に無ければ同名の pfb を探す
         let data = self.locator.read(&format!("{name}.pfb"))?;
@@ -312,6 +328,18 @@ impl<L: Locator> SabiFonts<L> {
 
     /// 仮想フォントの 1 文字を合成する。単位は 1000 / em。部品の字形はそれぞれの行列（FontMatrix、傾斜など）で置く
     fn compose_virtual(&self, vf: &Vf, code: u32) -> Option<Path> {
+        // 仮想フォントが自分自身や互いを参照しても止まるように、入れ子の深さを制限する（C-RESOURCE）
+        const MAX_DEPTH: usize = 8;
+        if self.vf_depth.get() >= MAX_DEPTH {
+            return None;
+        }
+        self.vf_depth.set(self.vf_depth.get() + 1);
+        let result = self.compose_virtual_inner(vf, code);
+        self.vf_depth.set(self.vf_depth.get() - 1);
+        result
+    }
+
+    fn compose_virtual_inner(&self, vf: &Vf, code: u32) -> Option<Path> {
         let ch = vf.char(code)?;
         let mut out = Path::default();
         let mut h: f64 = 0.0; // fix_word 単位（2^-20 em）
@@ -501,12 +529,18 @@ impl<L: Locator> FontSource for SabiFonts<L> {
                     .then(&Matrix::new(*extend, 0.0, *slant, 1.0, 0.0, 0.0));
                 Some((to_path(&g.outline), m))
             }
-            GlyphFont::OpenType { data, index } => {
+            GlyphFont::OpenType {
+                data,
+                index,
+                slant,
+                extend,
+            } => {
                 let ot = OpenTypeFont::parse(data, *index).ok()?;
                 let gid = ot.glyph_index(char::from_u32(code)?)?;
                 let g = ot.glyph(gid).ok()?;
                 let k = 1.0 / ot.units_per_em() as f64;
-                Some((to_path(&g.outline), Matrix::scale(k, k)))
+                let m = Matrix::scale(k, k).then(&Matrix::new(*extend, 0.0, *slant, 1.0, 0.0, 0.0));
+                Some((to_path(&g.outline), m))
             }
             GlyphFont::Missing => None,
         }
@@ -523,7 +557,12 @@ impl<L: Locator> FontSource for SabiFonts<L> {
                     let loaded = self
                         .locator
                         .read(&file)
-                        .map(|data| GlyphFont::OpenType { data, index })
+                        .map(|data| GlyphFont::OpenType {
+                            data,
+                            index,
+                            slant: 0.0,
+                            extend: 1.0,
+                        })
                         .unwrap_or(GlyphFont::Missing);
                     let rc = Rc::new(loaded);
                     self.glyphs.borrow_mut().insert(key, rc.clone());
@@ -532,7 +571,7 @@ impl<L: Locator> FontSource for SabiFonts<L> {
             }
         };
         match &*gf {
-            GlyphFont::OpenType { data, index } => {
+            GlyphFont::OpenType { data, index, .. } => {
                 let ot = OpenTypeFont::parse(data, *index).ok()?;
                 let g = ot.glyph(glyph_id).ok()?;
                 let k = 1.0 / ot.units_per_em() as f64;

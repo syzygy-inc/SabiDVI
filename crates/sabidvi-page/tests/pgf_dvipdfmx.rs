@@ -1,11 +1,13 @@
 //! 幾何の同一性の検証: 同じ DVI を dvipdfmx で PDF にし、その内容ストリームを SabiRender の評価器で描画命令列に読み直して、
-//! SabiDVI が出した描画命令列と比べる。ラスタライズを介さない。e-TeX、PGF、dvipdfmx が無ければ飛ばす。
+//! SabiDVI が出した描画命令列と比べる。ラスタライズを介さない。
+//! 各テストは契約 case（`specification/cases.md`）。e-TeX・PGF・dvipdfmx が無ければ BLOCKED、起動したのに出力が無ければ FAIL。
+//! 両側を同じ評価器で読むため評価器の共通の誤りは検出できない（手計算の期待値は `synthetic.rs`）。
 
 use sabidvi_format::{Dvi, FontDef};
 use sabidvi_page::{FontSource, PageExecutor, Paper};
+use sabidvi_qa::{kpsewhich, run_tool, Case};
 use sabirender_content::{Evaluator, NoResources};
 use sabirender_display::{DisplayList, Item, Matrix, Path, Segment};
-use std::process::Command;
 
 struct KpseTfm {
     cache:
@@ -16,14 +18,7 @@ impl KpseTfm {
     fn with<T>(&self, name: &str, f: impl FnOnce(&sabiface_metrics::tfm::Tfm) -> T) -> Option<T> {
         let mut cache = self.cache.borrow_mut();
         let entry = cache.entry(name.to_string()).or_insert_with(|| {
-            let out = Command::new("kpsewhich")
-                .arg(format!("{name}.tfm"))
-                .output()
-                .ok()?;
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if path.is_empty() {
-                return None;
-            }
+            let path = kpsewhich(&format!("{name}.tfm"))?;
             sabiface_metrics::tfm::Tfm::parse(&std::fs::read(path).ok()?).ok()
         });
         entry.as_ref().map(f)
@@ -54,30 +49,39 @@ const SOURCE: &str = r#"\def\pgfsysdriver{pgfsys-dvipdfmx.def}
 \bye
 "#;
 
-fn build() -> Option<(Vec<u8>, Vec<u8>)> {
+/// etex で DVI を、dvipdfmx で非圧縮の PDF を作る
+fn build(case: &Case) -> Option<(Vec<u8>, Vec<u8>)> {
     let dir = std::env::temp_dir().join(format!("sabidvi-pgf-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).ok()?;
-    std::fs::write(dir.join("p.tex"), SOURCE).ok()?;
-    let ok = Command::new("etex")
-        .args(["-interaction=batchmode", "p.tex"])
-        .current_dir(&dir)
-        .output()
-        .ok();
-    if ok.is_none() {
-        skip("etex not found");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("p.tex"), SOURCE).unwrap();
+    if run_tool(
+        case,
+        "etex",
+        &["-interaction=batchmode", "p.tex"],
+        Some(&dir),
+    )
+    .is_none()
+    {
+        case.blocked("etex not found");
         return None;
     }
-    let dvi = std::fs::read(dir.join("p.dvi")).ok()?;
-    let ok = Command::new("dvipdfmx")
-        .args(["-z0", "-o", "p.pdf", "p.dvi"])
-        .current_dir(&dir)
-        .output()
-        .ok();
-    if ok.is_none() {
-        skip("dvipdfmx not found");
+    let Ok(dvi) = std::fs::read(dir.join("p.dvi")) else {
+        case.tool_failed("etex produced no DVI (is PGF installed?)");
+    };
+    if run_tool(
+        case,
+        "dvipdfmx",
+        &["-z0", "-o", "p.pdf", "p.dvi"],
+        Some(&dir),
+    )
+    .is_none()
+    {
+        case.blocked("dvipdfmx not found");
         return None;
     }
-    let pdf = std::fs::read(dir.join("p.pdf")).ok()?;
+    let Ok(pdf) = std::fs::read(dir.join("p.pdf")) else {
+        case.tool_failed("dvipdfmx produced no PDF");
+    };
     let _ = std::fs::remove_dir_all(&dir);
     Some((dvi, pdf))
 }
@@ -188,9 +192,11 @@ fn close(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol
 }
 
+/// DVI-PGF-DVIPDFMX
 #[test]
 fn pgf_picture_matches_dvipdfmx_geometry() {
-    let Some((dvi_bytes, pdf_bytes)) = build() else {
+    let case = Case::required("DVI-PGF-DVIPDFMX", &["C-DVI", "C-DRAW"]);
+    let Some((dvi_bytes, pdf_bytes)) = build(&case) else {
         return;
     };
     let (content, paper) = page_content(&pdf_bytes);
@@ -236,6 +242,7 @@ fn pgf_picture_matches_dvipdfmx_geometry() {
                 close(p.0, q.0, 2e-3) && close(p.1, q.1, 2e-3),
                 "shape {i}: {p:?} vs {q:?}"
             );
+            case.compared();
         }
         for k in 0..3 {
             let (c1, c2) = (
@@ -256,6 +263,7 @@ fn pgf_picture_matches_dvipdfmx_geometry() {
             y.width
         );
         assert_eq!(x.dash.len(), y.dash.len(), "shape {i} dash");
+        case.compared_n(3);
     }
     // 期待する図形: 線、矩形の塗り、破線、円の塗りと線、クリップ、クリップされた塗り
     let kinds: Vec<&str> = a.iter().map(|s| s.kind).collect();
@@ -278,10 +286,14 @@ fn pgf_picture_matches_dvipdfmx_geometry() {
         a[3].alpha,
         a[4].alpha
     );
+    case.compared_n(4);
+    case.done();
 }
 
+/// DVI-TFM-POSITION: 文字と規則の位置を TFM の幅と手計算で確かめる
 #[test]
 fn text_and_rules_are_positioned_from_tfm_widths() {
+    let case = Case::required("DVI-TFM-POSITION", &["C-DVI", "C-FONT"]);
     let dir = std::env::temp_dir().join(format!("sabidvi-rule-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
@@ -289,16 +301,19 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
         "\\font\\a=cmr10 \\a AB\\vrule width 10pt height 5pt depth 1pt\\bye\n",
     )
     .unwrap();
-    if Command::new("tex")
-        .args(["-interaction=batchmode", "r.tex"])
-        .current_dir(&dir)
-        .output()
-        .is_err()
+    if run_tool(
+        &case,
+        "tex",
+        &["-interaction=batchmode", "r.tex"],
+        Some(&dir),
+    )
+    .is_none()
     {
-        skip("tex not found");
-        return;
+        return case.blocked("tex not found");
     }
-    let bytes = std::fs::read(dir.join("r.dvi")).unwrap();
+    let Ok(bytes) = std::fs::read(dir.join("r.dvi")) else {
+        case.tool_failed("tex produced no DVI");
+    };
     let _ = std::fs::remove_dir_all(&dir);
     let dvi = Dvi::parse(&bytes).unwrap();
     let fonts = KpseTfm {
@@ -333,21 +348,6 @@ fn text_and_rules_are_positioned_from_tfm_widths() {
     // plain TeX の \parindent = 20pt の後に A の幅 (0.75 em) + B の幅 (0.708334 em)。ページ左端の 72bp を足す
     let expected_x = 72.0 + (20.0 + (0.75 + 0.708334) * 10.0) * 72.0 / 72.27;
     assert!(close(x0, expected_x, 1e-3), "{x0} vs {expected_x}");
-}
-
-/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする。
-/// 中核でない環境（upTeX、XeTeX、Times、Latin Modern、原ノ味）は `SABI_STRICT_OPTIONAL` も設定されているときだけ失敗にする
-fn skip(reason: &str) {
-    let optional = ["uptex", "xetex", "Times", "uprml", "Harano", ".otf"]
-        .iter()
-        .any(|k| reason.contains(k));
-    let strict = std::env::var_os("SABI_STRICT_TESTS").is_some()
-        && (!optional || std::env::var_os("SABI_STRICT_OPTIONAL").is_some());
-    if strict {
-        panic!("required reference environment is missing: {reason}");
-    }
-    eprintln!(
-        "skipped{}: {reason}",
-        if optional { " (optional)" } else { "" }
-    );
+    case.compared_n(5);
+    case.done();
 }

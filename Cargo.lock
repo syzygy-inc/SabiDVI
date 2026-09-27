@@ -19,6 +19,7 @@ version = "0.0.1"
 dependencies = [
  "sabidvi-format",
  "sabidvi-page",
+ "sabidvi-qa",
  "sabiface-glyph",
  "sabiface-map",
  "sabiface-metrics",
@@ -29,18 +30,26 @@ dependencies = [
 [[package]]
 name = "sabidvi-format"
 version = "0.0.1"
+dependencies = [
+ "sabidvi-qa",
+]
 
 [[package]]
 name = "sabidvi-page"
 version = "0.0.1"
 dependencies = [
  "sabidvi-format",
+ "sabidvi-qa",
  "sabidvi-special",
  "sabiface-metrics",
  "sabirender-content",
  "sabirender-display",
  "sabirender-raster",
 ]
+
+[[package]]
+name = "sabidvi-qa"
+version = "0.0.1"
 
 [[package]]
 name = "sabidvi-special"

@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 純 Rust: 参照環境が無いテストは skip される
+  # 純 Rust: 参照環境が無い case は BLOCKED として台帳に残り、skip される
   test:
     runs-on: ubuntu-latest
     steps:
@@ -24,14 +24,22 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Ledger without the reference environment (no oracle case may PASS)
+        run: |
+          sh scripts/qa-ledger.sh || true
+          if grep -h $'\tPASS\t' target/qa-ledger/*.tsv; then echo "oracle cases must not PASS without TeX Live"; exit 1; fi
+      - name: Strict mode must fail without the reference environment (deliberate failure is detected)
+        run: |
+          rm -rf target/qa-ledger
+          if SABI_STRICT_TESTS=1 cargo test --workspace >/dev/null 2>&1; then echo "strict mode passed without TeX Live"; exit 1; fi
+          echo "strict mode failed as expected"
       - name: Build wasm
         run: |
           rustup target add wasm32-unknown-unknown
           cargo build --release -p sabidvi-wasm --target wasm32-unknown-unknown
           ls -la target/wasm32-unknown-unknown/release/sabidvi_wasm.wasm
 
-  # 参照環境あり: TeX Live のエンジン・dvipdfmx・PGF・Computer Modern を導入し、skip を失敗にして oracle を必ず実行する。
-  # 追加のフォント（Times、Latin Modern、原ノ味）と upTeX / XeTeX は optional で、無ければ warning として記録する
+  # 参照環境あり: 中核（tex / etex / dvipdfmx / PGF / Computer Modern）は必須、追加のエンジン・フォントは任意
   oracle:
     runs-on: ubuntu-latest
     steps:
@@ -52,4 +60,8 @@ jobs:
       - name: Test (strict for the core environment)
         env:
           SABI_STRICT_TESTS: "1"
-        run: cargo test --workspace
+        run: |
+          rm -rf target/qa-ledger
+          cargo test --workspace
+      - name: Ledger (all required cases PASS; optional cases listed)
+        run: sh scripts/qa-ledger.sh

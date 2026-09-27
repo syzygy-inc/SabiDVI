@@ -1,5 +1,7 @@
 # SabiDVI 設計 v0
 
+品質保証の責務・内部不変条件・契約との対応は [qa.md](qa.md) に定める。
+
 ## 位置づけ
 
 SabiDVI は SabiRender の入口の一つ。DVI（Knuth の TeX、pTeX / upTeX の拡張）と XDV（XeTeX）を読み、

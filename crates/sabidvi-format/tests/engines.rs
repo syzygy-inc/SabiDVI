@@ -1,44 +1,47 @@
-//! TeX Live の各エンジンが出す DVI / XDV を実際に生成して解析する。エンジンが無ければ飛ばす。
+//! TeX Live の各エンジンが出す DVI / XDV を実際に生成して解析する。
+//! 各テストは契約 case（`specification/cases.md`）。エンジンが無ければ BLOCKED、起動したのに DVI を出さなければ FAIL。
 
 use sabidvi_format::{Direction, Dvi, Kind, Op};
-use std::path::PathBuf;
-use std::process::Command;
+use sabidvi_qa::{run_tool, Case};
 
-fn run_engine(engine: &str, args: &[&str], name: &str, source: &str) -> Option<Vec<u8>> {
+fn run_engine(
+    case: &Case,
+    engine: &str,
+    args: &[&str],
+    name: &str,
+    source: &str,
+) -> Option<Vec<u8>> {
     let dir = std::env::temp_dir().join(format!("sabidvi-test-{}-{}", engine, std::process::id()));
-    std::fs::create_dir_all(&dir).ok()?;
-    let tex = dir.join(format!("{name}.tex"));
-    std::fs::write(&tex, source).ok()?;
-    let status = Command::new(engine)
-        .args(args)
-        .arg("-interaction=batchmode")
-        .arg(format!("{name}.tex"))
-        .current_dir(&dir)
-        .output();
-    let Ok(out) = status else {
-        skip(&format!("{engine} not found"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{name}.tex")), source).unwrap();
+    let mut full: Vec<&str> = args.to_vec();
+    full.push("-interaction=batchmode");
+    let file = format!("{name}.tex");
+    full.push(&file);
+    if run_tool(case, engine, &full, Some(&dir)).is_none() {
+        case.blocked(&format!("{engine} not found"));
         return None;
-    };
+    }
     let ext = if args.contains(&"-no-pdf") {
         "xdv"
     } else {
         "dvi"
     };
-    let path: PathBuf = dir.join(format!("{name}.{ext}"));
-    let data = std::fs::read(&path).ok();
-    if data.is_none() {
-        eprintln!(
-            "{engine} produced no output: {}",
-            String::from_utf8_lossy(&out.stdout)
-        );
-    }
+    let path = dir.join(format!("{name}.{ext}"));
+    let data = std::fs::read(&path);
     let _ = std::fs::remove_dir_all(&dir);
-    data
+    match data {
+        Ok(d) => Some(d),
+        Err(_) => case.tool_failed(&format!("{engine} produced no {ext}")),
+    }
 }
 
+/// DVI-ENGINE-TEX
 #[test]
 fn knuth_tex_dvi_parses_with_fonts_and_chars() {
+    let case = Case::required("DVI-ENGINE-TEX", &["C-DVI"]);
     let Some(data) = run_engine(
+        &case,
         "tex",
         &[],
         "t",
@@ -48,7 +51,7 @@ fn knuth_tex_dvi_parses_with_fonts_and_chars() {
     };
     let dvi = Dvi::parse(&data).unwrap();
     assert_eq!(dvi.kind, Kind::Dvi);
-    assert_eq!(dvi.pages.len(), 2 - 1);
+    assert_eq!(dvi.pages.len(), 1);
     assert!(dvi.fonts.iter().any(|f| f.name == "cmr10"));
     let ops = dvi.page_ops(0).unwrap();
     let chars: Vec<u32> = ops
@@ -74,11 +77,16 @@ fn knuth_tex_dvi_parses_with_fonts_and_chars() {
     assert!(ops.contains(&Op::Special(b"x".to_vec())));
     assert!(ops.iter().any(|o| matches!(o, Op::SetRule { .. })));
     assert!(!dvi.has_tate);
+    case.compared_n(6);
+    case.done();
 }
 
+/// DVI-ENGINE-UPTEX（任意: texlive-lang-japanese）
 #[test]
 fn uptex_tate_dvi_has_direction_changes() {
+    let case = Case::optional("DVI-ENGINE-UPTEX", &["C-DVI"]);
     let Some(data) = run_engine(
+        &case,
         "uptex",
         &[],
         "u",
@@ -98,12 +106,16 @@ fn uptex_tate_dvi_has_direction_changes() {
         dirs.contains(&&Direction::Tate) && dirs.contains(&&Direction::Yoko),
         "{dirs:?}"
     );
+    case.compared_n(3);
+    case.done();
 }
 
+/// DVI-ENGINE-XETEX（任意: xetex と Latin Modern の OpenType）
 #[test]
 fn xetex_xdv_has_native_fonts_and_glyphs() {
+    let case = Case::optional("DVI-ENGINE-XETEX", &["C-DVI"]);
     let src = "\\font\\x=\"[lmroman10-regular.otf]\" at 10pt \\x Hello\\bye\n";
-    let Some(data) = run_engine("xetex", &["-no-pdf"], "x", src) else {
+    let Some(data) = run_engine(&case, "xetex", &["-no-pdf"], "x", src) else {
         return;
     };
     let dvi = Dvi::parse(&data).unwrap();
@@ -127,21 +139,6 @@ fn xetex_xdv_has_native_fonts_and_glyphs() {
     assert_eq!(glyphs.ids.len(), 5);
     assert_eq!(glyphs.positions.len(), 5);
     assert!(glyphs.width > 0);
-}
-
-/// 参照環境（TeX Live、フォント）が無いときは飛ばす。`SABI_STRICT_TESTS` が設定されていれば失敗にする。
-/// 中核でない環境（upTeX、XeTeX、Times、Latin Modern、原ノ味）は `SABI_STRICT_OPTIONAL` も設定されているときだけ失敗にする
-fn skip(reason: &str) {
-    let optional = ["uptex", "xetex", "Times", "uprml", "Harano", ".otf"]
-        .iter()
-        .any(|k| reason.contains(k));
-    let strict = std::env::var_os("SABI_STRICT_TESTS").is_some()
-        && (!optional || std::env::var_os("SABI_STRICT_OPTIONAL").is_some());
-    if strict {
-        panic!("required reference environment is missing: {reason}");
-    }
-    eprintln!(
-        "skipped{}: {reason}",
-        if optional { " (optional)" } else { "" }
-    );
+    case.compared_n(8);
+    case.done();
 }

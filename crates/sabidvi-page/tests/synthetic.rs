@@ -193,3 +193,109 @@ fn self_referencing_bop_chain_is_an_error() {
     // 正常
     assert!(Dvi::parse(&dvi_bytes(&[])).is_ok());
 }
+
+/// 任意の符号に 1000 単位の正方形を返す字形の供給源（変換の検査用）
+struct SquareFont;
+
+impl sabidvi_page::FontSource for SquareFont {
+    fn char_width(&self, _: &sabidvi_format::FontDef, _: u32) -> Option<f64> {
+        Some(0.5)
+    }
+    fn glyph(
+        &self,
+        _: &sabidvi_format::FontDef,
+        _: u32,
+    ) -> Option<(sabirender_display::Path, sabirender_display::Matrix)> {
+        Some((
+            sabirender_display::Path::rect(0.0, 0.0, 1000.0, 1000.0),
+            sabirender_display::Matrix::scale(0.001, 0.001),
+        ))
+    }
+}
+
+/// D2: special の変換は文字（字形）にも効く。fnt_def と set_char を持つ DVI で確かめる
+#[test]
+fn transform_specials_apply_to_glyphs() {
+    // fnt_def1 0, checksum 0, scaled 10pt, design 10pt, name "sq"
+    let mut ops = vec![243, 0, 0, 0, 0, 0];
+    ops.extend_from_slice(&655360i32.to_be_bytes());
+    ops.extend_from_slice(&655360i32.to_be_bytes());
+    ops.extend_from_slice(&[0, 2, b's', b'q']);
+    ops.push(171); // fnt_num_0
+    special(&mut ops, "pdf:btrans scale 2");
+    ops.push(b'A'); // set_char
+    special(&mut ops, "pdf:etrans");
+    ops.push(b'A');
+    let bytes = {
+        // postamble にもフォント定義が要るので builder を使わず組む
+        let mut d = vec![247, 2];
+        for n in [25400000u32, 473628672, 1000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.push(0);
+        let bop = d.len() as i32;
+        d.push(139);
+        d.extend_from_slice(&[0; 40]);
+        d.extend_from_slice(&(-1i32).to_be_bytes());
+        d.extend_from_slice(&ops);
+        d.push(140);
+        let post = d.len() as i32;
+        d.push(248);
+        d.extend_from_slice(&bop.to_be_bytes());
+        for n in [25400000u32, 473628672, 1000, 10000000, 10000000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.extend_from_slice(&[0, 1, 0, 1]);
+        d.extend_from_slice(&ops[..18]); // fnt_def をもう一度（1+1+4+4+4+1+1+2 バイト）
+        d.push(249);
+        d.extend_from_slice(&post.to_be_bytes());
+        d.extend_from_slice(&[2, 223, 223, 223, 223]);
+        d
+    };
+    let dvi = Dvi::parse(&bytes).unwrap();
+    let (list, report) = PageExecutor::new(&dvi, &SquareFont, Paper::A4)
+        .run_page(0)
+        .unwrap();
+    assert_eq!(report.missing_glyph, 0, "{report:?}");
+    let glyphs: Vec<(f64, f64, f64, f64)> = list
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Glyphs { run, ctm, .. } => {
+                let g = &run.glyphs[0];
+                let p = g.outline.transform(&g.transform.then(ctm));
+                let pts: Vec<(f64, f64)> = p
+                    .segments
+                    .iter()
+                    .filter_map(|s| match *s {
+                        Segment::MoveTo(x, y) | Segment::LineTo(x, y) => Some((x, y)),
+                        _ => None,
+                    })
+                    .collect();
+                let xs = pts.iter().map(|p| p.0);
+                let ys = pts.iter().map(|p| p.1);
+                Some((
+                    xs.clone().fold(f64::MAX, f64::min),
+                    ys.clone().fold(f64::MAX, f64::min),
+                    xs.fold(f64::MIN, f64::max),
+                    ys.fold(f64::MIN, f64::max),
+                ))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(glyphs.len(), 2);
+    let pt = 72.0 / 72.27;
+    // 変換の中: 10pt の正方形が 2 倍。左下は現在位置 (72, 769.89)
+    let (x0, y0, x1, y1) = glyphs[0];
+    assert!(
+        close(x1 - x0, 20.0 * pt) && close(y1 - y0, 20.0 * pt),
+        "{:?}",
+        glyphs[0]
+    );
+    assert!(close(x0, 72.0) && close(y0, 841.89 - 72.0));
+    // 変換の外: 元の大きさ。1 文字目の送り（0.5em = 5pt）だけ右
+    let (x0, _, x1, y1) = glyphs[1];
+    assert!(close(x1 - x0, 10.0 * pt), "{:?}", glyphs[1]);
+    assert!(close(x0, 72.0 + 5.0 * pt) && close(y1 - (841.89 - 72.0), 10.0 * pt));
+}

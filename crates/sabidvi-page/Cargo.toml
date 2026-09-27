@@ -14,3 +14,4 @@ sabirender-content = { workspace = true }
 
 [dev-dependencies]
 sabirender-raster = { workspace = true }
+sabidvi-qa = { path = "../sabidvi-qa" }

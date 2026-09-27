@@ -320,5 +320,84 @@ mod tests {
         assert_eq!(status, 2);
         let meta = String::from_utf8(META.with(|m| m.borrow().clone())).unwrap();
         assert!(meta.starts_with("{\"error\":"));
+        assert_eq!(sabidvi_pixels_len(), 0);
+    }
+
+    /// C-RESULT / C-JOB: 失敗した呼び出しの後に前回の画像が残らない。誤りは無効なページ番号でも同じ
+    #[test]
+    fn a_failed_render_does_not_leave_the_previous_image() {
+        let dvi = dvi_bytes();
+        assert_eq!(
+            unsafe { sabidvi_render(dvi.as_ptr(), dvi.len(), 1, 2.0, 0.0) },
+            0
+        );
+        assert!(sabidvi_pixels_len() > 0);
+        // ページ範囲外
+        assert_eq!(
+            unsafe { sabidvi_render(dvi.as_ptr(), dvi.len(), 2, 2.0, 0.0) },
+            2
+        );
+        assert_eq!(sabidvi_pixels_len(), 0);
+        let meta = String::from_utf8(META.with(|m| m.borrow().clone())).unwrap();
+        assert!(meta.contains("out of range"), "{meta}");
+        // 不正な scale
+        assert_eq!(
+            unsafe { sabidvi_render(dvi.as_ptr(), dvi.len(), 1, f64::NAN, 0.0) },
+            2
+        );
+        assert_eq!(sabidvi_pixels_len(), 0);
+        // もう一度成功する
+        assert_eq!(
+            unsafe { sabidvi_render(dvi.as_ptr(), dvi.len(), 1, 2.0, 0.0) },
+            0
+        );
+        assert!(sabidvi_pixels_len() > 0);
+    }
+
+    /// C-RESULT: フォントの無い文字を含むページは Partial（1）で、画像と meta が同じ実行のもの
+    #[test]
+    fn partial_render_reports_missing_fonts_with_a_consistent_image() {
+        // fnt_def1 0 "nofont" と set_char 'A'、罫線 1 本
+        let mut ops = vec![243, 0, 0, 0, 0, 0];
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&[0, 6]);
+        ops.extend_from_slice(b"nofont");
+        ops.push(171);
+        ops.push(b'A');
+        ops.push(137);
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        ops.extend_from_slice(&655360i32.to_be_bytes());
+        let mut d = vec![247, 2];
+        for n in [25400000u32, 473628672, 1000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.push(0);
+        let bop = d.len() as i32;
+        d.push(139);
+        d.extend_from_slice(&[0; 40]);
+        d.extend_from_slice(&(-1i32).to_be_bytes());
+        d.extend_from_slice(&ops);
+        d.push(140);
+        let post = d.len() as i32;
+        d.push(248);
+        d.extend_from_slice(&bop.to_be_bytes());
+        for n in [25400000u32, 473628672, 1000, 10000000, 10000000] {
+            d.extend_from_slice(&n.to_be_bytes());
+        }
+        d.extend_from_slice(&[0, 1, 0, 1]);
+        d.extend_from_slice(&ops[..22]);
+        d.push(249);
+        d.extend_from_slice(&post.to_be_bytes());
+        d.extend_from_slice(&[2, 223, 223, 223, 223]);
+        sabidvi_clear_files();
+        let status = unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) };
+        let meta = String::from_utf8(META.with(|m| m.borrow().clone())).unwrap();
+        assert_eq!(status, 1, "{meta}");
+        assert!(meta.contains("\"missing\":[\"nofont.tfm\""), "{meta}");
+        assert!(meta.contains("\"missingGlyphs\":1"), "{meta}");
+        // 罫線だけは描かれている: 10pt 四方 + 余白
+        assert!(meta.contains("\"width\":48,\"height\":48"), "{meta}");
+        assert_eq!(sabidvi_pixels_len(), 48 * 48 * 4);
     }
 }

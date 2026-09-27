@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page", "crates/sabidvi-fonts", "crates/sabidvi-cli", "crates/sabidvi-wasm"]
+members = ["crates/sabidvi-format", "crates/sabidvi-special", "crates/sabidvi-page", "crates/sabidvi-fonts", "crates/sabidvi-cli", "crates/sabidvi-wasm", "crates/sabidvi-qa"]
 
 [workspace.package]
 version = "0.0.1"
