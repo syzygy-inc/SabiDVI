@@ -4,7 +4,8 @@
 cmr10.tfm	required	87f2d8981927644cbecaf3d639e96e348ea4e7be49d8804468bd8ba9ff3f5244
 cmr10.pfb	required	fdcede8794018df5f2b58f0905fb20a2b418ed8f67b73ee12445855dfbe5b1be
 upjisr-v.tfm	optional	8cf599e3cebe322db5d4f01a272d0462433c21d3477a31f8abd96ac01ac615dc
-upjisr-h.vf	optional	dc2d4c088467853987e3cd50164d5dbd3fefefaef18f71ca42aa1deb5fa0e9fb
+# upjisr-h.vf は uptex-fonts の版で内容が違う: 1 つ目が TeX Live 2025、2 つ目が TeX Live 2023（tlnet-final の uptex-fonts.tar.xz。Debian/Ubuntu の texlive-lang-japanese が配る版）。
+upjisr-h.vf	optional	dc2d4c088467853987e3cd50164d5dbd3fefefaef18f71ca42aa1deb5fa0e9fb,67201b2e7a5cff455a34e9a970fa264c3a3d3f8882fd0261f94bd72b25ddf779
 ptmr7t.vf	optional	0df4bc46c777ddc91e944bdfd27e345fe906a914fd1288189ec26419fc65db50
 utmr8a.pfb	optional	2ef9d47303d25f3c9553a43255dae8c39160e130ad5ed34444e39dee03d796a1
 lmroman10-regular.otf	optional	1aa18cfefa58132c52ce5de70db1fd1154201c19cd2b2cdaffba4906a33e6852

@@ -33,5 +33,6 @@ oracle プロファイルの基準は TeX Live 2025 の配布物。CI は Ubuntu
 各 case が参照するファイルの sha256 は [resources.lock](resources.lock) に固定し、`scripts/qa-resources.sh check` が
 kpsewhich で解決したファイルの digest を照合する（必須資源の不在と digest の相違は失敗。任意資源の不在は
 `SABI_STRICT_OPTIONAL` のときだけ失敗。エンジンの版は表示のみ）。基準を更新するときは手元の TeX Live で
-`scripts/qa-resources.sh record` を実行し、差分を変更管理に載せる。`pdftex.map` / `kanjix.map` は updmap が生成するので
+`scripts/qa-resources.sh record` を実行し、差分を変更管理に載せる。配布物の版で内容が違う資源（CI の Ubuntu は TeX Live 2023）は、
+受け入れる digest を lock に版の注記つきで列挙する（今のところ `upjisr-h.vf`）。`pdftex.map` / `kanjix.map` は updmap が生成するので
 digest を固定せず、存在のみ CI の診断で確認する。
