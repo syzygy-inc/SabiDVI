@@ -394,7 +394,11 @@ mod tests {
         let status = unsafe { sabidvi_render(d.as_ptr(), d.len(), 1, 4.0, 1.0) };
         let meta = String::from_utf8(META.with(|m| m.borrow().clone())).unwrap();
         assert_eq!(status, 1, "{meta}");
-        assert!(meta.contains("\"missing\":[\"nofont.tfm\""), "{meta}");
+        // 探した順に、map（束に無い）→ フォント名の tfm / vf / pfb
+        assert!(
+            meta.contains("\"nofont.tfm\",\"nofont.vf\",\"nofont.pfb\"]"),
+            "{meta}"
+        );
         assert!(meta.contains("\"missingGlyphs\":1"), "{meta}");
         // 罫線だけは描かれている: 10pt 四方 + 余白
         assert!(meta.contains("\"width\":48,\"height\":48"), "{meta}");
